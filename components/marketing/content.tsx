@@ -1,3 +1,4 @@
+import { paymentsHidden } from "@/lib/flags";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { Block } from "@/lib/content/types";
@@ -133,8 +134,8 @@ export function CloseBand({ title }: { title: string }) {
           {title}
         </h2>
         <p className="mt-4 text-[16px] text-ink-2">
-          Sign in with LinkedIn, paste your website, see seven posts on a board.{" "}
-          {TRIAL_LINE}
+          Sign in with LinkedIn, paste your website, see seven posts on a board.
+          {paymentsHidden() ? null : <> {TRIAL_LINE}</>}
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link
@@ -143,12 +144,14 @@ export function CloseBand({ title }: { title: string }) {
           >
             {HERO_CTA}
           </Link>
-          <Link
-            href="/pricing"
-            className="pill btn-outline num border border-hairline bg-surface px-6 py-3 text-[16px]"
-          >
-            From {DEFAULT_PLAN.priceLine}
-          </Link>
+          {paymentsHidden() ? null : (
+            <Link
+              href="/pricing"
+              className="pill btn-outline num border border-hairline bg-surface px-6 py-3 text-[16px]"
+            >
+              From {DEFAULT_PLAN.priceLine}
+            </Link>
+          )}
         </div>
       </div>
     </section>

@@ -1,5 +1,7 @@
 import { neon } from "@neondatabase/serverless";
 import { assertDebugSecret, htmlPage } from "@/lib/linkedin/debug-auth";
+import { paymentsHidden } from "@/lib/flags";
+import { testLoginEnabled } from "@/lib/test-login";
 
 /**
  * Answers "why did sign in fail" in one request instead of a log dig. Reports
@@ -42,6 +44,12 @@ const EXPECTED_TABLES = [
   "profile",
   "scheduled_post",
   "theme",
+  // Migrations 0008 onward. Without these the list above passed on a database
+  // that was missing the integrations, history and funnel tables.
+  "past_post",
+  "source",
+  "fact",
+  "funnel_event",
 ];
 
 function row(label: string, value: string) {
@@ -72,6 +80,12 @@ export async function GET(request: Request) {
           ? "read write token"
           : '<span style="color:#c94b4b">missing</span>',
     ),
+  );
+
+  // The two testing switches, so a deployment says which mode it is in.
+  env.push(
+    row("Payments", paymentsHidden() ? "hidden, every account may publish" : "shown, billing gate on"),
+    row("Test login", testLoginEnabled() ? "on" : "off"),
   );
 
   // A key of the wrong length fails only at the moment we seal a token, which

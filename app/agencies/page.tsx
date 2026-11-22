@@ -11,16 +11,19 @@ import { JsonLd } from "@/components/marketing/json-ld";
 import { POSTS } from "@/lib/content/blog";
 import type { Block } from "@/lib/content/types";
 import { AGENCY_SEATS, IMAGE_CAP_PER_MONTH } from "@/lib/legal";
+import { paymentsHidden } from "@/lib/flags";
 import { PLANS, TRIAL_LINE } from "@/lib/plans";
 import { SITE_NAME, shareMetadata } from "@/lib/share";
 import { breadcrumbs, jsonLd } from "@/lib/structured-data";
 
 const agency = PLANS[1];
+// Prices, the trial and the plan comparison sit behind this. lib/flags.ts.
+const hidePayments = paymentsHidden();
 
 export const metadata: Metadata = shareMetadata({
   path: "/agencies",
   title: "LinkedIn ghostwriting software for agencies | GoodSocials",
-  description: `Run up to ${AGENCY_SEATS} clients' LinkedIn profiles from one account for ${agency.priceLine}. A board per client, posts the client approves, and an email before any client's access runs out.`,
+  description: `Run up to ${AGENCY_SEATS} clients' LinkedIn profiles from one account${hidePayments ? "" : ` for ${agency.priceLine}`}. A board per client, posts the client approves, and an email before any client's access runs out.`,
 });
 
 /** The agency posts on the blog, in the order a new agency reads them. */
@@ -63,11 +66,15 @@ const BLOCKS: Block[] = [
       `Up to ${IMAGE_CAP_PER_MONTH} generated images a month per profile.`,
     ],
   },
-  { type: "h2", text: "The arithmetic" },
-  {
-    type: "p",
-    text: `${agency.priceLine} for ${AGENCY_SEATS} profiles is about $83 a profile, against $1,200 for twelve Pro plans. ${TRIAL_LINE}`,
-  },
+  ...(hidePayments
+    ? []
+    : ([
+        { type: "h2", text: "The arithmetic" },
+        {
+          type: "p",
+          text: `${agency.priceLine} for ${AGENCY_SEATS} profiles is about $83 a profile, against $1,200 for twelve Pro plans. ${TRIAL_LINE}`,
+        },
+      ] satisfies Block[])),
 ];
 
 export default function Agencies() {
@@ -91,21 +98,23 @@ export default function Agencies() {
       <PageTitle
         eyebrow="For agencies"
         title={`Run ${AGENCY_SEATS} clients' LinkedIn from one board.`}
-        summary={`The agent writes, you approve, it publishes. ${agency.priceLine}.`}
+        summary={`The agent writes, you approve, it publishes.${hidePayments ? "" : ` ${agency.priceLine}.`}`}
       >
         <div className="mt-8 flex flex-col gap-3 sm:flex-row">
           <Link
             href={`/signin?plan=${agency.slug}`}
             className="pill btn-accent num px-6 py-3 text-center text-[16px]"
           >
-            {agency.cta}
+            {hidePayments ? "Start a board" : agency.cta}
           </Link>
-          <Link
-            href="/pricing"
-            className="pill btn-outline border border-hairline bg-surface px-6 py-3 text-center text-[16px]"
-          >
-            Compare the three plans
-          </Link>
+          {hidePayments ? null : (
+            <Link
+              href="/pricing"
+              className="pill btn-outline border border-hairline bg-surface px-6 py-3 text-center text-[16px]"
+            >
+              Compare the three plans
+            </Link>
+          )}
         </div>
       </PageTitle>
 

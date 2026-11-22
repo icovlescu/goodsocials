@@ -13,6 +13,7 @@ import {
   type Plan,
   type PlanSlug,
 } from "@/lib/plans";
+import { paymentsHidden } from "@/lib/flags";
 import { callStripe, type StripeResult } from "@/lib/stripe/client";
 
 /**
@@ -68,6 +69,9 @@ export function canManageBilling(
 export function canPublish(
   account: Pick<Account, "subscriptionStatus">,
 ): boolean {
+  // While payments are hidden nobody can subscribe, so the gate stands aside
+  // for every account. One place, so the board, settings and cron agree.
+  if (paymentsHidden()) return true;
   return PUBLISHING.includes(account.subscriptionStatus);
 }
 

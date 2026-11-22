@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Logo } from "./logo";
+import { paymentsHidden } from "@/lib/flags";
 import { DEFAULT_PLAN, TRIAL_DAYS, planHref } from "@/lib/plans";
 
 /**
@@ -87,7 +88,9 @@ export function SiteNav({
           }`}
           style={onFootage ? { color: "rgba(255, 255, 255, 0.78)" } : undefined}
         >
-          {LINKS.map((link) => (
+          {LINKS.filter(
+            (link) => !(paymentsHidden() && link.href === "/#pricing"),
+          ).map((link) => (
             <li key={link.href}>
               <Link
                 href={link.href}
@@ -129,7 +132,11 @@ export function SiteNav({
             href={planHref(DEFAULT_PLAN.slug, signedIn)}
             className="pill btn-accent num whitespace-nowrap px-[18px] py-[9px] text-[15px]"
           >
-            {signedIn ? "Open board" : `Start ${TRIAL_DAYS} days free`}
+            {signedIn
+              ? "Open board"
+              : paymentsHidden()
+                ? "Start a board"
+                : `Start ${TRIAL_DAYS} days free`}
           </Link>
         </div>
       </nav>

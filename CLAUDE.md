@@ -184,6 +184,9 @@ No values in this file, ever.
 | `NEXT_PUBLIC_POSTHOG_KEY` | Client analytics |
 | `NEXT_PUBLIC_POSTHOG_HOST` | PostHog ingest host |
 | `CRON_SECRET` | Shared secret on cron routes so only Vercel can trigger publish |
+| `NEXT_PUBLIC_PAYMENTS_HIDDEN` | Unset or `1` hides every price, plan and checkout and lets every account publish. `0` brings billing back. `lib/flags.ts` |
+| `TEST_LOGIN_PASSWORD` | Turns on a password sign in to one test account that never posts to LinkedIn. Off while empty, refused under 16 characters. `lib/test-login.ts` |
+| `TEST_LOGIN_EMAIL` | Optional email shown on the test account |
 
 ## Running it
 

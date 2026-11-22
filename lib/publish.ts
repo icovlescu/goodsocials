@@ -8,6 +8,7 @@ import {
   scheduledPost,
 } from "@/db/schema";
 import { billingBlock } from "@/lib/billing";
+import { isTestMember } from "@/lib/test-login";
 import { openToken } from "@/lib/linkedin/crypto";
 import { uploadImage } from "@/lib/linkedin/images";
 import { personUrn, postPermalink, publishPost } from "@/lib/linkedin/posts";
@@ -146,6 +147,17 @@ async function publishForProfile(
   const stopped = billingBlock(rows[0].account);
   if (stopped) {
     await pauseProfile(rows, stopped, run);
+    return;
+  }
+
+  // A test login's board has a placeholder token. Pause rather than send it,
+  // so a test never reaches LinkedIn. lib/test-login.ts.
+  if (isTestMember(profile.linkedinMemberId)) {
+    await pauseProfile(
+      rows,
+      "This is a test account, so nothing is sent to LinkedIn.",
+      run,
+    );
     return;
   }
 

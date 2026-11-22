@@ -1,7 +1,13 @@
 import NextAuth from "next-auth";
+import Credentials from "next-auth/providers/credentials";
 import LinkedIn from "next-auth/providers/linkedin";
 import { LINKEDIN_SCOPES } from "@/lib/linkedin/config";
 import { onboardMember } from "@/lib/onboarding";
+import {
+  TEST_LOGIN_PROVIDER,
+  authorizeTestLogin,
+  testLoginEnabled,
+} from "@/lib/test-login";
 
 /**
  * Auth.js owns the consent and the code exchange. We own the token.
@@ -23,6 +29,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
       authorization: { params: { scope: LINKEDIN_SCOPES.join(" ") } },
     }),
+    // A password sign in for testing, present only while TEST_LOGIN_PASSWORD
+    // is set. It never talks to LinkedIn. lib/test-login.ts.
+    ...(testLoginEnabled()
+      ? [
+          Credentials({
+            id: TEST_LOGIN_PROVIDER,
+            name: "Test account",
+            credentials: { password: { label: "Password", type: "password" } },
+            authorize: authorizeTestLogin,
+          }),
+        ]
+      : []),
   ],
   session: { strategy: "jwt" },
   // Our own page. The Auth.js default is an unbranded button naming a major
@@ -30,6 +48,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: { signIn: "/signin", error: "/auth-error" },
   callbacks: {
     async signIn({ account, profile }) {
+      // authorizeTestLogin already checked the password and wrote the rows.
+      if (account?.provider === TEST_LOGIN_PROVIDER) return testLoginEnabled();
       if (!account?.access_token || !profile?.sub) {
         console.error(
           "[signIn] LinkedIn returned no access token or no sub, refusing",
@@ -65,8 +85,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
       return true;
     },
-    async jwt({ token, profile }) {
+    async jwt({ token, profile, account, user }) {
       if (profile?.sub) token.memberId = profile.sub;
+      if (account?.provider === TEST_LOGIN_PROVIDER && user?.id) {
+        token.memberId = user.id;
+      }
       return token;
     },
     async session({ session, token }) {

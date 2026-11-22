@@ -21,6 +21,7 @@ import {
 import type { SourceKind } from "@/lib/integrations/types";
 import { isSignedIn, loadViewerAccount } from "@/lib/viewer";
 import { PlanButton } from "@/components/marketing/plan-button";
+import { paymentsHidden } from "@/lib/flags";
 import { TrackLanding } from "@/components/marketing/track-landing";
 import { shareMetadata } from "@/lib/share";
 import { JsonLd } from "@/components/marketing/json-ld";
@@ -30,7 +31,8 @@ export const metadata = shareMetadata({
   path: "/",
   title: "GoodSocials: AI social media manager for LinkedIn",
   description:
-    "Writes LinkedIn posts from research and your own data. You approve them on a board and it publishes 5 times a week. From $100 a month.",
+    "Writes LinkedIn posts from research and your own data. You approve them on a board and it publishes 5 times a week." +
+    (paymentsHidden() ? "" : " From $100 a month."),
 });
 
 /**
@@ -260,6 +262,8 @@ export default async function Home() {
   const account = signedIn ? await loadViewerAccount() : null;
   const start = planHref(DEFAULT_PLAN.slug, signedIn);
   const startLabel = signedIn ? SIGNED_IN_CTA : HERO_CTA;
+  // Every price, plan and trial line below sits behind this. lib/flags.ts.
+  const hidePayments = paymentsHidden();
 
   return (
     <>
@@ -326,7 +330,11 @@ export default async function Home() {
           {signedIn ? null : (
             <p className="intro intro-2 num mt-3 font-mono text-[12px] text-ink-2">
               Sign in with LinkedIn, paste your website, 7 posts in 90 seconds.
-              {" "}{TRIAL_DAYS} days free, then {DEFAULT_PLAN.priceLine}.
+              {hidePayments ? null : (
+                <>
+                  {" "}{TRIAL_DAYS} days free, then {DEFAULT_PLAN.priceLine}.
+                </>
+              )}
             </p>
           )}
           {/* Open source, MIT. The paid plan and a copy on your own Vercel are
@@ -546,7 +554,8 @@ export default async function Home() {
                   <p className="text-[19px] font-semibold tracking-[-0.02em]">Agencies</p>
                   <p className="font-mono text-[12px] text-ink-2">Each client&rsquo;s own</p>
                   <p className="num text-[16px] leading-[1.5]">
-                    Up to {AGENCY_SEATS} clients, {PLANS[1].priceLine}.{" "}
+                    Up to {AGENCY_SEATS} clients
+                    {hidePayments ? "" : `, ${PLANS[1].priceLine}`}.{" "}
                     <Link href="/agencies" className="font-mono text-[12px] text-accent-text">
                       See the agency plan →
                     </Link>
@@ -558,6 +567,7 @@ export default async function Home() {
         </Reveal>
 
         {/* 6. Pricing. Three plans, the recommended one on ink. */}
+        {hidePayments ? null : (
         <Reveal id="pricing" className={anchor}>
           <div className={`${wrap} ${band} pt-0`}>
             <SectionHead
@@ -664,6 +674,7 @@ export default async function Home() {
             </p>
           </div>
         </Reveal>
+        )}
 
         {/* 7. The close. The month on ink and the button on the left, and on
             the right only the rows where a $3,000 manager and this differ. */}
@@ -690,7 +701,7 @@ export default async function Home() {
                   {startLabel}
                 </Link>
               </div>
-              {signedIn ? null : (
+              {signedIn || hidePayments ? null : (
                 <p
                   className="rv rv-1 num mt-4 font-mono text-[12px]"
                   style={{ color: "var(--panel-ink-2)" }}
@@ -722,11 +733,13 @@ export default async function Home() {
                       <td className="font-semibold">{row.us}</td>
                     </tr>
                   ))}
-                  <tr className="num border-t border-hairline font-semibold">
-                    <td className="py-[14px] pr-4">Price</td>
-                    <td className="pr-4 text-ink-2">$3,000 a month</td>
-                    <td>{DEFAULT_PLAN.priceLine}</td>
-                  </tr>
+                  {hidePayments ? null : (
+                    <tr className="num border-t border-hairline font-semibold">
+                      <td className="py-[14px] pr-4">Price</td>
+                      <td className="pr-4 text-ink-2">$3,000 a month</td>
+                      <td>{DEFAULT_PLAN.priceLine}</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
