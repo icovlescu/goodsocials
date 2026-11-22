@@ -1,5 +1,6 @@
 "use client";
 
+import { paymentsHidden } from "@/lib/flags";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { signOutAction } from "@/app/actions";
@@ -107,6 +108,9 @@ export function UserMenu({
 
           <div className="my-[5px] border-t border-hairline" />
 
+          {/* Plan and billing sit behind the payments flag. lib/flags.ts. */}
+          {paymentsHidden() ? null : (
+          <>
           <div className="px-3 pb-[6px] pt-[5px]">
             <p className="text-[13px] font-medium">{planLabel ?? "No plan"}</p>
             <p className="num text-[13px] leading-[1.4] text-ink-2">{billing}</p>
@@ -126,6 +130,8 @@ export function UserMenu({
             >
               Choose a plan
             </Link>
+          )}
+          </>
           )}
 
           <Link href="/settings" className={ITEM} onClick={() => setOpen(false)}>

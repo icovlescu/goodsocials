@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
+import { paymentsHidden } from "@/lib/flags";
 import {
   Blocks,
   CloseBand,
@@ -14,7 +16,7 @@ import { breadcrumbs, faq, jsonLd, software } from "@/lib/structured-data";
 
 const [pro, agency, consultancy] = PLANS;
 
-export const metadata: Metadata = shareMetadata({
+export const metadata: Metadata = paymentsHidden() ? {} : shareMetadata({
   path: "/pricing",
   title: `GoodSocials pricing: ${pro.priceLine} per LinkedIn profile`,
   description: `${pro.name} is ${pro.priceLine} for one LinkedIn profile. ${agency.name} is ${agency.priceLine} for up to ${AGENCY_SEATS}. ${consultancy.name} is ${consultancy.priceLine} with the founder setting it up. ${TRIAL_DAYS} days free on each.`,
@@ -53,6 +55,8 @@ const QUESTIONS = [
 ];
 
 export default function Pricing() {
+  // Kept, not deleted, while payments are hidden. lib/flags.ts.
+  if (paymentsHidden()) notFound();
   return (
     <ContentPage>
       <JsonLd

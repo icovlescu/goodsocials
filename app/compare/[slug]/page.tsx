@@ -1,3 +1,4 @@
+import { paymentsHidden } from "@/lib/flags";
 import type { Metadata } from "next";
 import { shareMetadata } from "@/lib/share";
 import { notFound } from "next/navigation";
@@ -144,11 +145,16 @@ export default async function Comparison({
         <p className="mt-10 text-[13px] leading-[1.5] text-ink-3">
           What we say about {c.name} comes from its public site, checked in
           September 2026. Features and prices change, so check theirs before you
-          decide. {c.name} is a trademark of its owner. Our three plans are on{" "}
-          <Link href="/pricing" className="underline underline-offset-4">
-            the pricing page
-          </Link>
-          .
+          decide. {c.name} is a trademark of its owner.
+          {paymentsHidden() ? null : (
+            <>
+              {" "}Our three plans are on{" "}
+              <Link href="/pricing" className="underline underline-offset-4">
+                the pricing page
+              </Link>
+              .
+            </>
+          )}
         </p>
 
         <h2 className="mt-16 font-mono text-[11px] uppercase tracking-[0.12em] text-ink-3">

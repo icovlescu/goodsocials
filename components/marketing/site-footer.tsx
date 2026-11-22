@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Logo } from "./logo";
 import { Streak } from "./streak";
 import { AGENCY_SEATS, GITHUB_REPO, SUPPORT } from "@/lib/legal";
+import { paymentsHidden } from "@/lib/flags";
 import { BOARD_HREF, DEFAULT_PLAN } from "@/lib/plans";
 import { COMPARISONS } from "@/lib/content/compare";
 import { POSTS } from "@/lib/content/blog";
@@ -144,7 +145,10 @@ export function SiteFooter({ signedIn = false }: { signedIn?: boolean }) {
           </Link>
 
           <ul className="flex flex-wrap items-center gap-x-8 gap-y-3 text-[15px] text-ink-2">
-            {[...LINKS, entry].map((link) => (
+            {[
+              ...LINKS.filter((link) => !(paymentsHidden() && link.href === "/pricing")),
+              entry,
+            ].map((link) => (
               <li key={link.label}>
                 <Link href={link.href} className="nav-link">
                   {link.label}
@@ -199,10 +203,15 @@ export function SiteFooter({ signedIn = false }: { signedIn?: boolean }) {
             ))}
           </ul>
           <p className="mt-8 max-w-[70ch] text-[13px] leading-[1.5] text-ink-3">
-            Built and run in Amsterdam. One price on the page,{" "}
-            <span className="num">{DEFAULT_PLAN.priceLine}</span>, cancel from
-            the settings screen. Not affiliated with LinkedIn. We post as you,
-            with your permission.
+            Built and run in Amsterdam.{" "}
+            {paymentsHidden() ? null : (
+              <>
+                One price on the page,{" "}
+                <span className="num">{DEFAULT_PLAN.priceLine}</span>, cancel
+                from the settings screen.{" "}
+              </>
+            )}
+            Not affiliated with LinkedIn. We post as you, with your permission.
           </p>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { AuthError } from "next-auth";
 import { signIn, signOut } from "@/auth";
 import { Footer } from "@/components/footer";
 import { SiteNav } from "@/components/marketing/site-nav";
@@ -8,6 +9,7 @@ import { PLAN_COOKIE, planFromSlug } from "@/lib/plans";
 import { TrackView } from "@/components/onboarding/track-view";
 import { anonId, track } from "@/lib/track";
 import { shareMetadata } from "@/lib/share";
+import { TEST_LOGIN_PROVIDER, testLoginEnabled } from "@/lib/test-login";
 
 export const metadata = shareMetadata({
   path: "/signin",
@@ -45,7 +47,7 @@ export const metadata = shareMetadata({
 export default async function SignInPage({
   searchParams,
 }: {
-  searchParams: Promise<{ plan?: string; stuck?: string }>;
+  searchParams: Promise<{ plan?: string; stuck?: string; test?: string }>;
 }) {
   const params = await searchParams;
   const plan = planFromSlug(params.plan);
@@ -119,6 +121,65 @@ export default async function SignInPage({
                 className="text-[13px] text-ink-2 underline"
               >
                 Sign out and start again
+              </button>
+            </form>
+          ) : null}
+
+          {/* Only while TEST_LOGIN_PASSWORD is set. lib/test-login.ts. */}
+          {testLoginEnabled() && !blocked ? (
+            <form
+              className="mt-8 border-t border-hairline pt-6"
+              action={async (data: FormData) => {
+                "use server";
+                const password = String(data.get("password") ?? "");
+                try {
+                  await signIn(TEST_LOGIN_PROVIDER, {
+                    password,
+                    redirectTo: "/onboarding",
+                  });
+                } catch (cause) {
+                  // A wrong password is CredentialsSignin. Anything else from
+                  // Auth.js is the account rows failing to write, which is the
+                  // database. The redirect on success is thrown too, and has
+                  // to be let through.
+                  if (cause instanceof AuthError) {
+                    console.error("[test-login]", cause.type, cause.message);
+                    redirect(
+                      cause.type === "CredentialsSignin"
+                        ? "/signin?test=wrong"
+                        : "/signin?test=failed",
+                    );
+                  }
+                  throw cause;
+                }
+              }}
+            >
+              <label
+                htmlFor="test-password"
+                className="text-[13px] font-medium text-ink-2"
+              >
+                Test account, no LinkedIn
+              </label>
+              <input
+                id="test-password"
+                name="password"
+                type="password"
+                required
+                autoComplete="current-password"
+                className="mt-2 w-full rounded-[10px] border border-hairline bg-surface px-4 py-[10px] text-[15px]"
+              />
+              {params.test === "wrong" || params.test === "failed" ? (
+                <p className="mt-2 text-[13px] text-ink" role="alert">
+                  {params.test === "wrong"
+                    ? "That password did not match. Check TEST_LOGIN_PASSWORD on the deployment."
+                    : "The password matched, but the test account could not be created. Check the database tables, then try again."}
+                </p>
+              ) : null}
+              <button
+                type="submit"
+                className="pill btn-outline mt-3 w-full border border-hairline bg-surface px-6 py-[12px] text-[15px]"
+              >
+                Sign in to the test account
               </button>
             </form>
           ) : null}

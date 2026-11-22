@@ -1,3 +1,4 @@
+import { paymentsHidden } from "@/lib/flags";
 import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { cookies } from "next/headers";
@@ -151,9 +152,12 @@ export async function SettingsBody({
   const account = access.account;
   const plan = planOf(account);
   const multi = plan.seats > 1;
+  const hidePayments = paymentsHidden();
   const planLine = multi
     ? `All ${account.seatLimit} seats are in use.`
-    : `${plan.name} covers one profile at ${PRICE_SOLO}. Agency is ${PRICE_AGENCY} for up to ${AGENCY_SEATS}.`;
+    : hidePayments
+      ? "This account covers one profile."
+      : `${plan.name} covers one profile at ${PRICE_SOLO}. Agency is ${PRICE_AGENCY} for up to ${AGENCY_SEATS}.`;
 
   // Somebody who has never checked out sees the plan they picked on the way
   // in, carried in the cookie the sign in page wrote. That choice survived a
@@ -235,6 +239,9 @@ export async function SettingsBody({
                 : `${connectedSources} of ${sources.length} connected`
             }
           />
+          {/* Plan and billing rows sit behind the payments flag. lib/flags.ts. */}
+          {hidePayments ? null : (
+          <>
           <Row
             label="Plan"
             value={
@@ -250,6 +257,8 @@ export async function SettingsBody({
             }
           />
           <BillingRow account={account} picked={picked} />
+          </>
+          )}
         </ul>
       </section>
 

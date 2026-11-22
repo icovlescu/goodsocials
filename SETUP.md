@@ -190,3 +190,25 @@ exclusive, which is the setting that lets tax be added on top later without new
 prices. Checkout does collect a VAT number, so invoices to EU companies carry
 one. Turning Stripe Tax on is a dashboard change plus `automatic_tax` on the
 Checkout session in `lib/billing.ts`.
+
+
+---
+
+# Testing without payments or LinkedIn
+
+Two switches, both environment variables, both reversible without a code change.
+
+**Payments hidden.** `NEXT_PUBLIC_PAYMENTS_HIDDEN` is read by `lib/flags.ts`.
+Unset or `1`, the pricing page returns 404, the pricing section, trial lines,
+plan rows and checkout buttons are gone, and `canPublish` lets every account
+publish. Set it to `0` and redeploy to bring all of it back. Nothing Stripe
+related was removed.
+
+**Test login.** Set `TEST_LOGIN_PASSWORD` on Vercel to a random string of at
+least 16 characters (`openssl rand -base64 24`) and redeploy. `/signin` then
+shows a password box under the LinkedIn button. It signs into one account,
+`Test account`, built by the same code a LinkedIn sign in uses. Generation is
+real. Publishing is not: the cron pauses that board's posts with "This is a test
+account, so nothing is sent to LinkedIn." Remove the variable to turn it off.
+
+`/api/admin/health?k=LINKEDIN_DEBUG_SECRET` reports both switches.

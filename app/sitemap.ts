@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { COMPARISONS } from "@/lib/content/compare";
 import { POSTS } from "@/lib/content/blog";
+import { paymentsHidden } from "@/lib/flags";
 import { ORIGIN } from "@/lib/share";
 
 /**
@@ -19,7 +20,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/docs",
     "/privacy",
     "/terms",
-  ];
+  ].filter((path) => !(paymentsHidden() && path === "/pricing"));
   return [
     ...pages.map((path) => ({ url: `${ORIGIN}${path}` })),
     ...COMPARISONS.map((c) => ({ url: `${ORIGIN}/compare/${c.slug}` })),

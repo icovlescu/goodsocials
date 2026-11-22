@@ -1,4 +1,5 @@
 import { FOUNDER_LINKEDIN, SUPPORT } from "@/lib/legal";
+import { paymentsHidden } from "@/lib/flags";
 import { PLANS } from "@/lib/plans";
 import { ORIGIN, SITE_NAME } from "@/lib/share";
 
@@ -47,7 +48,8 @@ export function software(): Thing {
     description:
       "AI social media manager for LinkedIn. Writes posts from research and your own data, you approve them on a board, it publishes 5 times a week.",
     publisher: { "@id": ORG_ID },
-    offers: PLANS.map((plan) => ({
+    // No offers while payments are hidden, so search results show no price.
+    offers: paymentsHidden() ? undefined : PLANS.map((plan) => ({
       "@type": "Offer",
       name: plan.name,
       description: plan.line,
