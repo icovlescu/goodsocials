@@ -63,7 +63,7 @@ export const MIN_LENGTH = 200;
 export const MAX_LENGTH = 3000;
 
 /** The writing rules in CLAUDE.md, word for word. */
-const BANNED_WORDS = [
+export const BANNED_WORDS = [
   "seamless",
   "seamlessly",
   "leverage",
@@ -80,7 +80,7 @@ const BANNED_WORDS = [
   "basically",
 ];
 
-const BANNED_PHRASES = [
+export const BANNED_PHRASES = [
   "here's the thing",
   "here is the thing",
   "let that sink in",

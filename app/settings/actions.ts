@@ -12,6 +12,7 @@ import { writeBrand } from "@/lib/brand-intake";
 import { planMoreIdeas } from "@/lib/cards";
 import { loadAccess, setActiveProfile, type Access } from "@/lib/profiles";
 import { isZone } from "@/lib/time";
+import { revokeGrant } from "@/lib/oauth/server";
 import {
   IMPORT_CHUNK,
   PAST_POST_MAX_TEXT,
@@ -286,4 +287,15 @@ export async function deleteAccountAction(typed: string): Promise<SaveResult> {
 
   await signOut({ redirectTo: "/" });
   return { ok: true };
+}
+
+/**
+ * Cuts off one Claude connector grant. Its access and refresh tokens stop in
+ * the same write, so Claude has to ask the member again.
+ */
+export async function disconnectClaude(grantId: string): Promise<void> {
+  const session = await auth();
+  if (!session?.memberId) return;
+  await revokeGrant(session.memberId, grantId);
+  revalidatePath("/settings");
 }

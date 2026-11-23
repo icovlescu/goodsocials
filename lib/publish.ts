@@ -82,6 +82,8 @@ type DueRow = {
 export async function runPublishQueue(opts?: {
   now?: Date;
   limit?: number;
+  /** One card only, for "publish now" from the Claude connector. */
+  cardId?: string;
 }): Promise<PublishRun> {
   const now = opts?.now ?? new Date();
   const db = getDb();
@@ -101,6 +103,7 @@ export async function runPublishQueue(opts?: {
       and(
         isNull(scheduledPost.publishedAt),
         lte(scheduledPost.publishAt, now),
+        opts?.cardId ? eq(scheduledPost.cardId, opts.cardId) : undefined,
       ),
     )
     .orderBy(asc(scheduledPost.publishAt))

@@ -99,6 +99,13 @@
       "when": 1790325180322,
       "tag": "0013_funnel_event",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1795433078328,
+      "tag": "0014_claude_connector",
+      "breakpoints": true
     }
   ]
 }

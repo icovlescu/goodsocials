@@ -235,6 +235,34 @@ export const DOCS: DocSection[] = [
     ],
   },
   {
+    id: "claude",
+    title: "Writing in Claude",
+    blocks: [
+      {
+        type: "p",
+        text: "GoodSocials works as a connector in Claude. Claude writes the posts in your own chat, on your own Claude plan, and GoodSocials keeps the board, your brand principles, the schedule and the LinkedIn connection.",
+      },
+      {
+        type: "steps",
+        items: [
+          "In Claude, open Settings, then Connectors, and choose Add custom connector.",
+          "Name it GoodSocials and paste https://goodsocials.co/api/mcp as the URL. Settings in GoodSocials shows the same address under Write in Claude.",
+          "Press Connect. Claude opens GoodSocials, you sign in with LinkedIn, and you press Allow.",
+          "In a new chat, ask Claude to write a LinkedIn post. It reads your principles and themes first, then saves the post to Draft on your board.",
+          "Ask for changes in the chat. When you say to schedule it, the post takes the next free 09:00 slot, or the day you name.",
+        ],
+      },
+      {
+        type: "p",
+        text: "Claude can read your principles, themes and connected numbers, add and edit drafts, change a principle when you correct it, schedule, unschedule and publish. It publishes only when you tell it to. Posts scheduled from Claude go out as text. Approve one on the board to add a picture.",
+      },
+      {
+        type: "p",
+        text: "To cut Claude off, press Disconnect under Write in Claude in settings, or remove the connector in Claude.",
+      },
+    ],
+  },
+  {
     id: "agency",
     title: "Running clients' profiles",
     blocks: [

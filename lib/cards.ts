@@ -22,6 +22,7 @@ import { parseFunnel } from "@/lib/funnel-steps";
 import { boardZone, checkDay, nextSlot } from "@/lib/schedule";
 import { formatDayAndTime, publishSlot, type DayKey } from "@/lib/time";
 import { readFacts, type FactRow } from "@/lib/integrations/facts";
+import { runPublishQueue, type PublishOutcome } from "@/lib/publish";
 
 /**
  * Three actions, no fourth. Approve advances the card one column, Revise
@@ -245,10 +246,14 @@ export async function approveCard(
  * If the editor cannot be reached nothing is scheduled. Holding a good post
  * for a minute costs less than publishing a bad one under a client's name.
  */
-async function qualityGate(loaded: Loaded): Promise<CardResult | null> {
+async function qualityGate(
+  loaded: Loaded,
+  opts: { editor?: boolean } = {},
+): Promise<CardResult | null> {
   const { card, profile, principles, facts } = loaded;
   const text = card.draftText;
   if (!text) return { ok: false, error: "That card has no text to publish." };
+  const editor = opts.editor ?? true;
 
   const hash = textHash(text);
   if (isVerdict(card.quality) && card.quality.textHash === hash) {
@@ -272,6 +277,13 @@ async function qualityGate(loaded: Loaded): Promise<CardResult | null> {
     queued.flatMap((q) => (q.text ? [q.text] : [])),
   );
   const ruled = issues.length > 0;
+
+  // The Claude connector asks for the rules only. The member's own Claude
+  // wrote the post in a chat where they read it, and running our editor on it
+  // would put the text cost back on our key, which is what the connector is
+  // for removing. A rules pass is not written down as a pass, so the board's
+  // own Approve still sends the same text past the editor.
+  if (!ruled && !editor) return null;
 
   if (!ruled) {
     const comments = await db
@@ -898,4 +910,220 @@ export async function addOwnIdea(
   });
 
   return { ok: true };
+}
+
+/*
+ * The Claude connector's half of the board. lib/mcp/tools.ts calls these and
+ * nothing else, so a post written in a member's own Claude chat lands on the
+ * same rows, passes the same rules and leaves the same log as one written here.
+ *
+ * What is different is who writes. These never call the text model: the text
+ * arrives finished from the member's Claude, on their plan, and the connector
+ * schedules it without a picture, because a picture is the one cost left on
+ * our side. Approving the card on the board still adds one.
+ */
+
+export type WrittenResult =
+  | { ok: true; cardId: string; message: string }
+  | { ok: false; error: string; held?: boolean };
+
+const WRITTEN_STATES = new Set(["idea", "draft", "image"]);
+
+/** A finished post from Claude, straight into Draft. */
+export async function addWrittenDraft(
+  actor: Actor,
+  input: {
+    text: string;
+    idea?: string;
+    themeId?: string | null;
+    kind?: "framework" | "data" | "receipt" | "finding";
+  },
+): Promise<WrittenResult> {
+  const text = input.text.trim();
+  if (text.length < 20) return { ok: false, error: "The post is empty or too short to keep." };
+  if (text.length > 3000) {
+    return { ok: false, error: "LinkedIn stops at 3,000 characters. Cut it down first." };
+  }
+
+  const db = getDb();
+  const [row] = await db
+    .select({ boardId: boardTable.id })
+    .from(boardTable)
+    .innerJoin(profileTable, eq(boardTable.profileId, profileTable.id))
+    .where(
+      and(
+        eq(profileTable.id, actor.profileId),
+        eq(profileTable.accountId, actor.accountId),
+      ),
+    )
+    .limit(1);
+  if (!row) return { ok: false, error: "No board for this profile." };
+
+  let theme: string | null = null;
+  if (input.themeId) {
+    const [found] = await db
+      .select({ id: themeTable.id })
+      .from(themeTable)
+      .where(
+        and(eq(themeTable.id, input.themeId), eq(themeTable.profileId, actor.profileId)),
+      )
+      .limit(1);
+    if (!found) return { ok: false, error: "That theme is not on this profile." };
+    theme = found.id;
+  }
+
+  const idea = (input.idea?.trim() || text.split("\n")[0]).slice(0, OWN_IDEA_MAX);
+  const [created] = await db
+    .insert(cardTable)
+    .values({
+      boardId: row.boardId,
+      idea,
+      kind: input.kind ?? "finding",
+      themeId: theme,
+      state: "draft",
+      draftText: text,
+    })
+    .returning({ id: cardTable.id });
+
+  return { ok: true, cardId: created.id, message: "Added to Draft on the board." };
+}
+
+/**
+ * Replaces the text of a card that has not left the queue. Logged as a revise
+ * with the member's note, because the log is where a revision is read back
+ * and the quality editor reads the notes as the member's word.
+ */
+export async function replaceDraftText(
+  actor: Actor,
+  cardId: string,
+  text: string,
+  note?: string,
+): Promise<WrittenResult> {
+  const body = text.trim();
+  if (body.length < 20) return { ok: false, error: "The post is empty or too short to keep." };
+  if (body.length > 3000) {
+    return { ok: false, error: "LinkedIn stops at 3,000 characters. Cut it down first." };
+  }
+
+  const loaded = await load(actor, cardId);
+  if (!loaded) return { ok: false, error: "That card is not on your board." };
+  const { card } = loaded;
+  if (!WRITTEN_STATES.has(card.state)) {
+    return {
+      ok: false,
+      error:
+        card.state === "scheduled"
+          ? "That post is scheduled. Unschedule it first, then edit it."
+          : "That card has left the board.",
+    };
+  }
+
+  await log(card.id, "revise", actor.memberId, note?.trim() || "Rewritten in Claude.");
+  await getDb()
+    .update(cardTable)
+    .set({
+      draftText: body,
+      state: card.state === "idea" ? "draft" : card.state,
+      // A bracket that is gone is a number that arrived, as in reviseCard.
+      needs: card.needs && !body.includes("[") ? null : card.needs,
+      quality: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(cardTable.id, card.id));
+
+  return { ok: true, cardId: card.id, message: "Text updated on the board." };
+}
+
+/**
+ * Approve with the day chosen, or the next free slot when none is. The rules in
+ * lib/quality.ts still decide; the editor pass does not run (see qualityGate).
+ */
+export async function scheduleWritten(
+  actor: Actor,
+  cardId: string,
+  day?: DayKey,
+): Promise<WrittenResult & { publishAt?: string }> {
+  const loaded = await load(actor, cardId);
+  if (!loaded) return { ok: false, error: "That card is not on your board." };
+  const { card, board, profile } = loaded;
+
+  if (card.state === "posted") return { ok: false, error: "That one is already published." };
+  if (card.state === "rejected") return { ok: false, error: "That card was rejected." };
+  if (!card.draftText) {
+    return { ok: false, error: "That card is an idea with no text yet. Write the post first." };
+  }
+
+  if (card.state !== "scheduled") {
+    const stopped = await qualityGate(loaded, { editor: false });
+    if (stopped && !stopped.ok) return stopped;
+  }
+
+  const zone = boardZone(board.timezone);
+  let publishAt: Date;
+  if (day) {
+    const check = await checkDay({ profileId: profile.id, cardId: card.id, day, zone });
+    if (!check.ok) return { ok: false, error: check.error };
+    publishAt = publishSlot(day, zone);
+  } else if (card.state === "scheduled" && card.scheduledAt) {
+    return {
+      ok: true,
+      cardId: card.id,
+      message: `Already scheduled for ${formatDayAndTime(card.scheduledAt, zone)}.`,
+      publishAt: card.scheduledAt.toISOString(),
+    };
+  } else {
+    publishAt = await nextSlot({
+      profileId: profile.id,
+      targetCadence: board.targetCadence,
+      zone,
+    });
+  }
+
+  const wasWaiting = card.state !== "scheduled";
+  const slot = await place(card.id, profile.id, publishAt, zone);
+  if (wasWaiting) await log(card.id, "approve", actor.memberId);
+
+  return {
+    ok: true,
+    cardId: card.id,
+    message: `Publishing ${slot} (${zone}).`,
+    publishAt: publishAt.toISOString(),
+  };
+}
+
+/**
+ * Puts the card at the front of the queue and runs the publish loop for that
+ * one card, so "post it now" does not wait for the daily cron. Every check the
+ * cron makes still runs: billing, the LinkedIn connection, the call budget and
+ * the rules that make a post broken in the feed.
+ */
+export async function publishWrittenNow(
+  actor: Actor,
+  cardId: string,
+): Promise<{ ok: true; outcome: PublishOutcome } | { ok: false; error: string; held?: boolean }> {
+  const loaded = await load(actor, cardId);
+  if (!loaded) return { ok: false, error: "That card is not on your board." };
+  const { card, board, profile } = loaded;
+
+  if (card.state === "posted") return { ok: false, error: "That one is already published." };
+  if (card.state === "rejected") return { ok: false, error: "That card was rejected." };
+  if (!card.draftText) {
+    return { ok: false, error: "That card is an idea with no text yet. Write the post first." };
+  }
+
+  if (card.state !== "scheduled") {
+    const stopped = await qualityGate(loaded, { editor: false });
+    if (stopped && !stopped.ok) return stopped;
+  }
+
+  const now = new Date();
+  await place(card.id, profile.id, now, boardZone(board.timezone));
+  if (card.state !== "scheduled") await log(card.id, "approve", actor.memberId);
+
+  const run = await runPublishQueue({ now, cardId: card.id, limit: 1 });
+  const outcome = run.outcomes[0];
+  if (!outcome) {
+    return { ok: false, error: "The post was queued but the publish run did not pick it up. It goes out on the next run." };
+  }
+  return { ok: true, outcome };
 }

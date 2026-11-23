@@ -590,3 +590,65 @@ export const funnelEvent = pgTable(
     index("funnel_event_created_idx").on(t.createdAt),
   ],
 );
+
+/**
+ * An app that asked to act for a member through the Claude connector, usually
+ * Claude itself. Registered by the app, with no human step, which is what the
+ * MCP authorization spec expects (RFC 7591 dynamic registration): a member
+ * adds the connector URL in Claude and Claude registers itself here.
+ *
+ * Registering grants nothing. A client only gets a token after a signed in
+ * member approves it on /oauth/authorize, and the redirect URIs written here
+ * are the only places that approval can be sent.
+ */
+export const oauthClient = pgTable("oauth_client", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  /** The public client id we hand back. Random, not the row id. */
+  clientId: text("client_id").notNull().unique(),
+  /** The name the app gave itself, shown on the consent screen. Never trusted. */
+  name: text("name").notNull(),
+  /** Exact match only. JSON array of strings. */
+  redirectUris: jsonb("redirect_uris").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * One approval on the consent screen: an authorization code while it is
+ * fresh, then the access and refresh tokens it was exchanged for.
+ *
+ * Every secret here is a SHA-256 hash, never the value. A token is random and
+ * long, so a hash is all a lookup needs, and a leaked table holds nothing that
+ * opens a board. Revoking is setting `revoked_at`, which stops the access and
+ * the refresh token in one write.
+ *
+ * Scoped to the account rather than to one profile, the same boundary every
+ * card action uses, so an agency's Claude can work across its seats.
+ */
+export const oauthGrant = pgTable(
+  "oauth_grant",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => oauthClient.clientId, { onDelete: "cascade" }),
+    /** The member who pressed Allow. Resolved to an account on every call. */
+    memberId: text("member_id").notNull(),
+    redirectUri: text("redirect_uri").notNull(),
+    /** PKCE S256 challenge. A code without its verifier is worthless. */
+    codeChallenge: text("code_challenge").notNull(),
+    codeHash: text("code_hash").unique(),
+    codeExpiresAt: timestamp("code_expires_at", { withTimezone: true }),
+    accessTokenHash: text("access_token_hash").unique(),
+    accessExpiresAt: timestamp("access_expires_at", { withTimezone: true }),
+    refreshTokenHash: text("refresh_token_hash").unique(),
+    refreshExpiresAt: timestamp("refresh_expires_at", { withTimezone: true }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("oauth_grant_member_idx").on(t.memberId)],
+);
