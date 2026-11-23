@@ -36,6 +36,7 @@ import { DeleteAccount } from "@/components/settings/delete-account";
 import { HistoryImport } from "@/components/settings/history-import";
 import { ProfilePicker, type SeatRow } from "@/components/settings/profile-picker";
 import { WebsiteRow } from "@/components/settings/website-row";
+import { ClaudeConnector } from "@/components/settings/claude-connector";
 
 /**
  * What came back from LinkedIn after connecting a profile. One line each,
@@ -291,6 +292,8 @@ export async function SettingsBody({
         background. We email you before yours runs out, and posting pauses
         rather than failing one post at a time.
       </p>
+
+      <ClaudeConnector memberId={session.memberId} />
 
       <section className="mt-8 max-w-[760px]">
         <h2 className="text-[13px] font-medium text-ink-2">Your account</h2>

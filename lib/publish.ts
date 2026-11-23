@@ -7,7 +7,7 @@ import {
   profile as profileTable,
   scheduledPost,
 } from "@/db/schema";
-import { billingBlock } from "@/lib/billing";
+import { billingBlock, canPublishCard } from "@/lib/billing";
 import { isTestMember } from "@/lib/test-login";
 import { openToken } from "@/lib/linkedin/crypto";
 import { uploadImage } from "@/lib/linkedin/images";
@@ -82,6 +82,8 @@ type DueRow = {
 export async function runPublishQueue(opts?: {
   now?: Date;
   limit?: number;
+  /** One card only, for "publish now" from the connector. */
+  cardId?: string;
 }): Promise<PublishRun> {
   const now = opts?.now ?? new Date();
   const db = getDb();
@@ -101,6 +103,7 @@ export async function runPublishQueue(opts?: {
       and(
         isNull(scheduledPost.publishedAt),
         lte(scheduledPost.publishAt, now),
+        opts?.cardId ? eq(scheduledPost.cardId, opts.cardId) : undefined,
       ),
     )
     .orderBy(asc(scheduledPost.publishAt))
@@ -134,10 +137,11 @@ export async function runPublishQueue(opts?: {
 }
 
 async function publishForProfile(
-  rows: DueRow[],
+  due: DueRow[],
   now: Date,
   run: PublishRun,
 ): Promise<void> {
+  let rows = due;
   const db = getDb();
   const profile = rows[0].profile;
 
@@ -146,8 +150,12 @@ async function publishForProfile(
   // is wrong with these posts and they go out the day a plan starts again.
   const stopped = billingBlock(rows[0].account);
   if (stopped) {
-    await pauseProfile(rows, stopped, run);
-    return;
+    // Free tier posts from the connector still go out. lib/tiers.ts counted
+    // them against the month when they took their slot.
+    const blocked = rows.filter((r) => !canPublishCard(r.account, r.card));
+    if (blocked.length > 0) await pauseProfile(blocked, stopped, run);
+    rows = rows.filter((r) => canPublishCard(r.account, r.card));
+    if (rows.length === 0) return;
   }
 
   // A test login's board has a placeholder token. Pause rather than send it,

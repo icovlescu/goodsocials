@@ -265,6 +265,13 @@ export const card = pgTable(
     postUrn: text("post_urn"),
     /** Ordering within a column only. Never the column itself. */
     position: integer("position").notNull().default(0),
+    /**
+     * Who wrote it: `board` for the agent on our key, `connector` for a post
+     * written in the member's own AI chat and saved through the MCP server.
+     * The free tier is counted on `connector` rows, and only those publish
+     * for an account with no subscription. lib/tiers.ts.
+     */
+    origin: text("origin").notNull().default("board"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -589,4 +596,127 @@ export const funnelEvent = pgTable(
     index("funnel_event_member_idx").on(t.memberId),
     index("funnel_event_created_idx").on(t.createdAt),
   ],
+);
+
+/**
+ * An app that asked to act for a member through the Claude connector, usually
+ * Claude itself. Registered by the app, with no human step, which is what the
+ * MCP authorization spec expects (RFC 7591 dynamic registration): a member
+ * adds the connector URL in Claude and Claude registers itself here.
+ *
+ * Registering grants nothing. A client only gets a token after a signed in
+ * member approves it on /oauth/authorize, and the redirect URIs written here
+ * are the only places that approval can be sent.
+ */
+export const oauthClient = pgTable("oauth_client", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  /** The public client id we hand back. Random, not the row id. */
+  clientId: text("client_id").notNull().unique(),
+  /** The name the app gave itself, shown on the consent screen. Never trusted. */
+  name: text("name").notNull(),
+  /** Exact match only. JSON array of strings. */
+  redirectUris: jsonb("redirect_uris").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * One approval on the consent screen: an authorization code while it is
+ * fresh, then the access and refresh tokens it was exchanged for.
+ *
+ * Every secret here is a SHA-256 hash, never the value. A token is random and
+ * long, so a hash is all a lookup needs, and a leaked table holds nothing that
+ * opens a board. Revoking is setting `revoked_at`, which stops the access and
+ * the refresh token in one write.
+ *
+ * Scoped to the account rather than to one profile, the same boundary every
+ * card action uses, so an agency's Claude can work across its seats.
+ */
+export const oauthGrant = pgTable(
+  "oauth_grant",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => oauthClient.clientId, { onDelete: "cascade" }),
+    /** The member who pressed Allow. Resolved to an account on every call. */
+    memberId: text("member_id").notNull(),
+    redirectUri: text("redirect_uri").notNull(),
+    /** PKCE S256 challenge. A code without its verifier is worthless. */
+    codeChallenge: text("code_challenge").notNull(),
+    codeHash: text("code_hash").unique(),
+    codeExpiresAt: timestamp("code_expires_at", { withTimezone: true }),
+    accessTokenHash: text("access_token_hash").unique(),
+    accessExpiresAt: timestamp("access_expires_at", { withTimezone: true }),
+    refreshTokenHash: text("refresh_token_hash").unique(),
+    refreshExpiresAt: timestamp("refresh_expires_at", { withTimezone: true }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("oauth_grant_member_idx").on(t.memberId)],
+);
+
+/**
+ * The same post, rewritten for another platform. The card's own text is the
+ * LinkedIn version, because LinkedIn is the platform the queue and the cron
+ * publish to; every other platform is a row here, one per card per platform.
+ *
+ * `platform` is text checked against lib/platforms/registry.ts rather than an
+ * enum, so adding Threads or Bluesky is a registry entry and not a migration.
+ *
+ * `status`: `draft` while it is only text, `manual` once the member was handed
+ * the text and a compose link to post it themselves (the free route),
+ * `queued` when an automated adapter holds it, `published` once a platform
+ * accepted it, `failed` with `last_error` when one refused.
+ */
+export const postVariant = pgTable(
+  "post_variant",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    cardId: uuid("card_id")
+      .notNull()
+      .references(() => card.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(),
+    text: text("text").notNull(),
+    status: text("status").notNull().default("draft"),
+    publishAt: timestamp("publish_at", { withTimezone: true }),
+    pushedAt: timestamp("pushed_at", { withTimezone: true }),
+    externalUrl: text("external_url"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [uniqueIndex("post_variant_card_platform_unique").on(t.cardId, t.platform)],
+);
+
+/**
+ * Something true about the business that the member told their AI chat, and
+ * the chat saved through the connector: "Signed three universities in
+ * October", "The NGO tier costs 20 EUR". The hand-curated sibling of `fact`,
+ * for what no API reports. Kept per profile, capped in lib/business-notes.ts,
+ * and read by the connector's tools only, so the board's own prompts stay the
+ * size they were costed at.
+ */
+export const businessNote = pgTable(
+  "business_note",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profile.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("business_note_profile_idx").on(t.profileId)],
 );

@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
+  account as accountTable,
   board as boardTable,
   brandPrinciple,
   card as cardTable,
@@ -22,6 +23,9 @@ import { parseFunnel } from "@/lib/funnel-steps";
 import { boardZone, checkDay, nextSlot } from "@/lib/schedule";
 import { formatDayAndTime, publishSlot, type DayKey } from "@/lib/time";
 import { readFacts, type FactRow } from "@/lib/integrations/facts";
+import { runPublishQueue, type PublishOutcome } from "@/lib/publish";
+import { FREE_LIMITS, UPGRADE_LINE, usageFor } from "@/lib/tiers";
+import { canPublishCard } from "@/lib/billing";
 
 /**
  * Three actions, no fourth. Approve advances the card one column, Revise
@@ -245,10 +249,14 @@ export async function approveCard(
  * If the editor cannot be reached nothing is scheduled. Holding a good post
  * for a minute costs less than publishing a bad one under a client's name.
  */
-async function qualityGate(loaded: Loaded): Promise<CardResult | null> {
+async function qualityGate(
+  loaded: Loaded,
+  opts: { editor?: boolean } = {},
+): Promise<CardResult | null> {
   const { card, profile, principles, facts } = loaded;
   const text = card.draftText;
   if (!text) return { ok: false, error: "That card has no text to publish." };
+  const editor = opts.editor ?? true;
 
   const hash = textHash(text);
   if (isVerdict(card.quality) && card.quality.textHash === hash) {
@@ -272,6 +280,13 @@ async function qualityGate(loaded: Loaded): Promise<CardResult | null> {
     queued.flatMap((q) => (q.text ? [q.text] : [])),
   );
   const ruled = issues.length > 0;
+
+  // The connector's free tier asks for the rules only. The member's own chat
+  // wrote the post where they read it, and running our editor on it would put
+  // the text cost back on our key, which is what the free tier is for
+  // removing. A rules pass is not written down as a pass, so the board's own
+  // Approve still sends the same text past the editor. Paid runs both.
+  if (!ruled && !editor) return null;
 
   if (!ruled) {
     const comments = await db
@@ -898,4 +913,272 @@ export async function addOwnIdea(
   });
 
   return { ok: true };
+}
+
+/*
+ * The connector's half of the board. lib/mcp/tools.ts calls these and
+ * nothing else, so a post written in a member's own Claude chat lands on the
+ * same rows, passes the same rules and leaves the same log as one written here.
+ *
+ * What is different is who writes. These never call the text model to write:
+ * the text arrives finished from the member's own AI chat, on their plan, and
+ * the connector schedules it without a picture, because a picture is a cost on
+ * our side. On a paid plan the editor pass reviews it before it takes a slot.
+ * Approving the card on the board still adds a picture.
+ */
+
+export type WrittenResult =
+  | { ok: true; cardId: string; message: string }
+  | { ok: false; error: string; held?: boolean };
+
+const WRITTEN_STATES = new Set(["idea", "draft", "image"]);
+
+/** A finished post from Claude, straight into Draft. */
+export async function addWrittenDraft(
+  actor: Actor,
+  input: {
+    text: string;
+    idea?: string;
+    themeId?: string | null;
+    kind?: "framework" | "data" | "receipt" | "finding";
+  },
+): Promise<WrittenResult> {
+  const text = input.text.trim();
+  if (text.length < 20) return { ok: false, error: "The post is empty or too short to keep." };
+  if (text.length > 3000) {
+    return { ok: false, error: "LinkedIn stops at 3,000 characters. Cut it down first." };
+  }
+
+  const db = getDb();
+  const [row] = await db
+    .select({ boardId: boardTable.id })
+    .from(boardTable)
+    .innerJoin(profileTable, eq(boardTable.profileId, profileTable.id))
+    .where(
+      and(
+        eq(profileTable.id, actor.profileId),
+        eq(profileTable.accountId, actor.accountId),
+      ),
+    )
+    .limit(1);
+  if (!row) return { ok: false, error: "No board for this profile." };
+
+  const usage = await usageFor(actor.accountId);
+  if (usage.draftsLeft === 0) {
+    return {
+      ok: false,
+      error: `The free plan keeps ${FREE_LIMITS.storedDrafts} drafts on the board at once. Schedule or reject one to make room. ${UPGRADE_LINE}`,
+    };
+  }
+
+  let theme: string | null = null;
+  if (input.themeId) {
+    const [found] = await db
+      .select({ id: themeTable.id })
+      .from(themeTable)
+      .where(
+        and(eq(themeTable.id, input.themeId), eq(themeTable.profileId, actor.profileId)),
+      )
+      .limit(1);
+    if (!found) return { ok: false, error: "That theme is not on this profile." };
+    theme = found.id;
+  }
+
+  const idea = (input.idea?.trim() || text.split("\n")[0]).slice(0, OWN_IDEA_MAX);
+  const [created] = await db
+    .insert(cardTable)
+    .values({
+      boardId: row.boardId,
+      idea,
+      kind: input.kind ?? "finding",
+      themeId: theme,
+      state: "draft",
+      draftText: text,
+      origin: "connector",
+    })
+    .returning({ id: cardTable.id });
+
+  return { ok: true, cardId: created.id, message: "Added to Draft on the board." };
+}
+
+/**
+ * Replaces the text of a card that has not left the queue. Logged as a revise
+ * with the member's note, because the log is where a revision is read back
+ * and the quality editor reads the notes as the member's word.
+ */
+export async function replaceDraftText(
+  actor: Actor,
+  cardId: string,
+  text: string,
+  note?: string,
+): Promise<WrittenResult> {
+  const body = text.trim();
+  if (body.length < 20) return { ok: false, error: "The post is empty or too short to keep." };
+  if (body.length > 3000) {
+    return { ok: false, error: "LinkedIn stops at 3,000 characters. Cut it down first." };
+  }
+
+  const loaded = await load(actor, cardId);
+  if (!loaded) return { ok: false, error: "That card is not on your board." };
+  const { card } = loaded;
+  if (!WRITTEN_STATES.has(card.state)) {
+    return {
+      ok: false,
+      error:
+        card.state === "scheduled"
+          ? "That post is scheduled. Unschedule it first, then edit it."
+          : "That card has left the board.",
+    };
+  }
+
+  await log(card.id, "revise", actor.memberId, note?.trim() || "Rewritten in Claude.");
+  await getDb()
+    .update(cardTable)
+    .set({
+      draftText: body,
+      state: card.state === "idea" ? "draft" : card.state,
+      // A bracket that is gone is a number that arrived, as in reviseCard.
+      needs: card.needs && !body.includes("[") ? null : card.needs,
+      quality: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(cardTable.id, card.id));
+
+  return { ok: true, cardId: card.id, message: "Text updated on the board." };
+}
+
+/**
+ * Whether the account may give this card a slot at `publishAt`. Paid: yes.
+ * Free: a connector post while the month has room, and nothing the board's
+ * agent wrote, because the cron would hold that one for a plan anyway and a
+ * slot that never publishes is worse than a refusal now.
+ */
+async function allowance(
+  actor: Actor,
+  card: { origin: string; state: string },
+  publishAt: Date,
+): Promise<{ ok: true; paid: boolean } | { ok: false; error: string }> {
+  const usage = await usageFor(actor.accountId, publishAt);
+  if (usage.tier === "paid") return { ok: true, paid: true };
+
+  const [acct] = await getDb()
+    .select({ subscriptionStatus: accountTable.subscriptionStatus })
+    .from(accountTable)
+    .where(eq(accountTable.id, actor.accountId))
+    .limit(1);
+  if (acct && !canPublishCard(acct, card)) {
+    return {
+      ok: false,
+      error: `That post was written by the board's agent, which publishes on a plan. Rewrite it in the chat and save it with create_draft to post it free. ${UPGRADE_LINE}`,
+    };
+  }
+  if (card.origin === "connector" && card.state !== "scheduled" && usage.postsLeft === 0) {
+    return {
+      ok: false,
+      error: `The free plan publishes ${FREE_LIMITS.postsPerMonth} posts a month and that month is full. Pick a day next month, or start a plan. ${UPGRADE_LINE}`,
+    };
+  }
+  return { ok: true, paid: false };
+}
+
+/**
+ * Approve with the day chosen, or the next free slot when none is. The rules in
+ * lib/quality.ts still decide; the editor pass does not run (see qualityGate).
+ */
+export async function scheduleWritten(
+  actor: Actor,
+  cardId: string,
+  day?: DayKey,
+): Promise<WrittenResult & { publishAt?: string }> {
+  const loaded = await load(actor, cardId);
+  if (!loaded) return { ok: false, error: "That card is not on your board." };
+  const { card, board, profile } = loaded;
+
+  if (card.state === "posted") return { ok: false, error: "That one is already published." };
+  if (card.state === "rejected") return { ok: false, error: "That card was rejected." };
+  if (!card.draftText) {
+    return { ok: false, error: "That card is an idea with no text yet. Write the post first." };
+  }
+
+  const zone = boardZone(board.timezone);
+  let publishAt: Date;
+  if (day) {
+    const check = await checkDay({ profileId: profile.id, cardId: card.id, day, zone });
+    if (!check.ok) return { ok: false, error: check.error };
+    publishAt = publishSlot(day, zone);
+  } else if (card.state === "scheduled" && card.scheduledAt) {
+    return {
+      ok: true,
+      cardId: card.id,
+      message: `Already scheduled for ${formatDayAndTime(card.scheduledAt, zone)}.`,
+      publishAt: card.scheduledAt.toISOString(),
+    };
+  } else {
+    publishAt = await nextSlot({
+      profileId: profile.id,
+      targetCadence: board.targetCadence,
+      zone,
+    });
+  }
+
+  const allowed = await allowance(actor, card, publishAt);
+  if (!allowed.ok) return allowed;
+
+  // Paid plans get the editor pass on top of the rules; it is the review the
+  // plan pays for. Free gets the rules, which cost nothing to run.
+  if (card.state !== "scheduled") {
+    const stopped = await qualityGate(loaded, { editor: allowed.paid });
+    if (stopped && !stopped.ok) return stopped;
+  }
+
+  const wasWaiting = card.state !== "scheduled";
+  const slot = await place(card.id, profile.id, publishAt, zone);
+  if (wasWaiting) await log(card.id, "approve", actor.memberId);
+
+  return {
+    ok: true,
+    cardId: card.id,
+    message: `Publishing ${slot} (${zone}).`,
+    publishAt: publishAt.toISOString(),
+  };
+}
+
+/**
+ * Puts the card at the front of the queue and runs the publish loop for that
+ * one card, so "post it now" does not wait for the daily cron. Every check the
+ * cron makes still runs: billing, the LinkedIn connection, the call budget and
+ * the rules that make a post broken in the feed.
+ */
+export async function publishWrittenNow(
+  actor: Actor,
+  cardId: string,
+): Promise<{ ok: true; outcome: PublishOutcome } | { ok: false; error: string; held?: boolean }> {
+  const loaded = await load(actor, cardId);
+  if (!loaded) return { ok: false, error: "That card is not on your board." };
+  const { card, board, profile } = loaded;
+
+  if (card.state === "posted") return { ok: false, error: "That one is already published." };
+  if (card.state === "rejected") return { ok: false, error: "That card was rejected." };
+  if (!card.draftText) {
+    return { ok: false, error: "That card is an idea with no text yet. Write the post first." };
+  }
+
+  const now = new Date();
+  const allowed = await allowance(actor, card, now);
+  if (!allowed.ok) return allowed;
+
+  if (card.state !== "scheduled") {
+    const stopped = await qualityGate(loaded, { editor: allowed.paid });
+    if (stopped && !stopped.ok) return stopped;
+  }
+
+  await place(card.id, profile.id, now, boardZone(board.timezone));
+  if (card.state !== "scheduled") await log(card.id, "approve", actor.memberId);
+
+  const run = await runPublishQueue({ now, cardId: card.id, limit: 1 });
+  const outcome = run.outcomes[0];
+  if (!outcome) {
+    return { ok: false, error: "The post was queued but the publish run did not pick it up. It goes out on the next run." };
+  }
+  return { ok: true, outcome };
 }
