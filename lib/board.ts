@@ -79,7 +79,7 @@ export type BoardView = {
   queueError: string | null;
 };
 
-const PLACEHOLDER_PREFIX = "Not set yet.";
+export const PLACEHOLDER_PREFIX = "Not set yet.";
 
 /**
  * By profile id, not by member id. An agency account has one profile per seat

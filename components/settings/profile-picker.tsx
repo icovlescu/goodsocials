@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { switchProfile } from "@/app/settings/actions";
 import { Working } from "@/components/ui/working";
+import { withBase } from "@/lib/base-path";
 
 export type SeatRow = {
   id: string;
@@ -99,7 +100,7 @@ export function ProfilePicker({
 
       {seatsLeft > 0 ? (
         <p className="mt-4 text-[13px] leading-[1.5] text-ink-2">
-          <a href="/api/linkedin/link" className="font-medium text-ink underline">
+          <a href={withBase("/api/linkedin/link")} className="font-medium text-ink underline">
             Connect another LinkedIn profile
           </a>{" "}
           <span className="text-ink-3">

@@ -24,6 +24,7 @@ import {
 import { funnelActor, readBrand } from "@/lib/funnel-context";
 import { PLAN_COOKIE, planFromSlug } from "@/lib/plans";
 import { anonId, track } from "@/lib/track";
+import { siteUrl } from "@/lib/base-path";
 
 /**
  * Everything a funnel screen does that is not a model call. Each action moves
@@ -208,6 +209,6 @@ export async function pickIdeas(picked: string[], own: string): Promise<ActionRe
 async function origin(): Promise<string> {
   const head = await headers();
   const host = head.get("x-forwarded-host") ?? head.get("host");
-  if (host) return `${head.get("x-forwarded-proto") ?? "https"}://${host}`;
-  return process.env.AUTH_URL ?? "https://goodsocials.co";
+  if (host) return siteUrl(`${head.get("x-forwarded-proto") ?? "https"}://${host}`);
+  return siteUrl("https://goodsocials.co");
 }

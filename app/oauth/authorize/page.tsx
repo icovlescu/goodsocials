@@ -5,6 +5,7 @@ import { SiteNav } from "@/components/marketing/site-nav";
 import { loadAccess } from "@/lib/profiles";
 import { checkAuthorize, denyUrl, issueCode } from "@/lib/oauth/server";
 import { TEST_LOGIN_PROVIDER, testLoginEnabled } from "@/lib/test-login";
+import { withBase } from "@/lib/base-path";
 
 export const metadata = {
   title: "Connect an AI chat | GoodSocials",
@@ -139,7 +140,7 @@ export default async function AuthorizePage({
       <Shell title="Set up your board first.">
         <p className="mt-3 text-ink-2">
           Your GoodSocials account has no board yet. Open{" "}
-          <a className="underline" href="/onboarding">
+          <a className="underline" href={withBase("/onboarding")}>
             onboarding
           </a>
           , finish it, then add the connector in Claude again.

@@ -20,3 +20,23 @@ export function paymentsHidden(): boolean {
   if (value === undefined || value === "") return true;
   return !["0", "false", "off", "no"].includes(value.trim().toLowerCase());
 }
+
+/**
+ * Whether this deployment can write with our own model. Off while
+ * ANTHROPIC_API_KEY is unset, which is how the free tier is tested: the
+ * member's AI chat writes everything through the connector, onboarding
+ * included, and every screen that would have called the model says what to
+ * do instead of failing. Server side only; the key never reaches a client.
+ */
+export function serverWriting(): boolean {
+  return Boolean(process.env.ANTHROPIC_API_KEY);
+}
+
+/** Whether this deployment can generate images. Off while OPENROUTER_API_KEY is unset. */
+export function serverImages(): boolean {
+  return Boolean(process.env.OPENROUTER_API_KEY);
+}
+
+/** What a screen says when it would have written with our model and cannot. */
+export const CHAT_WRITES =
+  "On this plan your AI chat writes the posts. Ask it in Claude or ChatGPT with the GoodSocials connector, and the post lands here.";

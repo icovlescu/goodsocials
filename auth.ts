@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import LinkedIn from "next-auth/providers/linkedin";
 import { LINKEDIN_SCOPES } from "@/lib/linkedin/config";
 import { onboardMember } from "@/lib/onboarding";
+import { BASE_PATH, withBase } from "@/lib/base-path";
 import {
   TEST_LOGIN_PROVIDER,
   authorizeTestLogin,
@@ -22,7 +23,26 @@ import {
  * return an error to our callback, it serves LinkedIn's own error page and
  * bounces the member to the bare domain, so a typo here is invisible in logs.
  */
+/**
+ * Under a base path (the /v2 product) Auth.js lives at /v2/api/auth, and its
+ * cookies get their own names, so a member signed in on goodsocials.co and on
+ * goodsocials.co/v2 holds two sessions that cannot overwrite each other even
+ * when the two deployments use different secrets.
+ */
+function scopedCookies() {
+  if (!BASE_PATH) return undefined;
+  const prefix = `__Secure-gs${BASE_PATH.replace(/\//g, "-")}`;
+  const options = { httpOnly: true, sameSite: "lax" as const, path: "/", secure: true };
+  return Object.fromEntries(
+    ["sessionToken", "callbackUrl", "csrfToken", "pkceCodeVerifier", "state", "nonce"].map(
+      (key) => [key, { name: `${prefix}.${key}`, options }],
+    ),
+  );
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  ...(BASE_PATH ? { basePath: `${BASE_PATH}/api/auth` } : {}),
+  cookies: scopedCookies(),
   providers: [
     LinkedIn({
       clientId: process.env.LINKEDIN_CLIENT_ID,
@@ -45,8 +65,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
   // Our own page. The Auth.js default is an unbranded button naming a major
   // platform, which is what Safe Browsing flagged as social engineering.
-  pages: { signIn: "/signin", error: "/auth-error" },
+  pages: { signIn: withBase("/signin"), error: withBase("/auth-error") },
   callbacks: {
+    // A relative redirectTo such as "/onboarding" is a path in this app, so
+    // it gets the base in front. Anything off this host goes home instead.
+    async redirect({ url, baseUrl }) {
+      const origin = new URL(baseUrl).origin;
+      if (url.startsWith("/")) return `${origin}${withBase(url)}`;
+      try {
+        if (new URL(url).origin === origin) return url;
+      } catch {
+        // Not a URL. Home.
+      }
+      return `${origin}${withBase("/")}`;
+    },
     async signIn({ account, profile }) {
       // authorizeTestLogin already checked the password and wrote the rows.
       if (account?.provider === TEST_LOGIN_PROVIDER) return testLoginEnabled();

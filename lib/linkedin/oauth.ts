@@ -5,6 +5,7 @@ import {
   requiredEnv,
 } from "./config";
 import { linkedinCall } from "./client";
+import { siteUrl } from "@/lib/base-path";
 
 export type TokenResponse = {
   access_token: string;
@@ -34,7 +35,7 @@ export function callbackUri(request: Request): string {
     process.env.LINKEDIN_REDIRECT_URI ??
     process.env.LINKEDIN_DEBUG_REDIRECT_URI;
   if (override) return override;
-  return `https://${new URL(request.url).host}/api/linkedin/callback`;
+  return `${siteUrl(`https://${new URL(request.url).host}`)}/api/linkedin/callback`;
 }
 
 export function authorizeUrl(opts: {

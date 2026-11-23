@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import { CrispChat } from "@/components/crisp-chat";
-import { ORIGIN, SITE_NAME } from "@/lib/share";
+import { HOST, SITE_NAME } from "@/lib/share";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -24,7 +24,7 @@ const geistMono = Geist_Mono({
  * WhatsApp and X all require.
  */
 export const metadata: Metadata = {
-  metadataBase: new URL(ORIGIN),
+  metadataBase: new URL(HOST),
   applicationName: SITE_NAME,
   title: "GoodSocials",
   description:

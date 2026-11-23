@@ -18,6 +18,7 @@ import {
   type QuestionStep,
   type Step,
 } from "@/lib/funnel-steps";
+import { withBase } from "@/lib/base-path";
 
 /**
  * The free half of the funnel, in one client component, because its point is
@@ -84,7 +85,7 @@ export function FunnelFlow({
 
   /** The two reads. Each sets state only when its request answers. */
   const readBrand = useCallback((next: NonNullable<Funnel["site"]>, source?: string) => {
-    brandJob.current = fetch("/api/onboarding/research", post({ ...body(next), source }))
+    brandJob.current = fetch(withBase("/api/onboarding/research"), post({ ...body(next), source }))
       .then(async (res) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "We could not read that page.");
@@ -100,7 +101,7 @@ export function FunnelFlow({
   const readRivals = useCallback((next: NonNullable<Funnel["site"]>) => {
     // Failure is fine here: the sample route researches again. The caller
     // marks the research as running, so this can start from an effect.
-    rivalsJob.current = fetch("/api/onboarding/competitors", post(body(next)))
+    rivalsJob.current = fetch(withBase("/api/onboarding/competitors"), post(body(next)))
       .then((res) => readLines(res, (event) => setResearchEvents((prev) => [...prev, event])))
       .catch(() => null)
       .finally(() => setResearching(false));
@@ -119,7 +120,7 @@ export function FunnelFlow({
       // The market research is the sample, so it is worth waiting for.
       if (rivalsJob.current) await Promise.allSettled([rivalsJob.current]);
 
-      const res = await fetch("/api/onboarding/sample", { method: "POST" });
+      const res = await fetch(withBase("/api/onboarding/sample"), { method: "POST" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Your first post did not write.");
       // Confetti first, then the post. The burst lives on document.body, so it

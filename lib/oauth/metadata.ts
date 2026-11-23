@@ -1,4 +1,5 @@
 import { OAUTH_SCOPE } from "@/lib/oauth/server";
+import { siteUrl } from "@/lib/base-path";
 
 /**
  * The two discovery documents the MCP authorization spec asks for, built from
@@ -9,8 +10,9 @@ import { OAUTH_SCOPE } from "@/lib/oauth/server";
 
 export const MCP_PATH = "/api/mcp";
 
+/** This app's absolute address, base path included: the OAuth issuer. */
 export function originOf(request: Request): string {
-  return new URL(request.url).origin;
+  return siteUrl(new URL(request.url).origin);
 }
 
 /** RFC 8414. */
