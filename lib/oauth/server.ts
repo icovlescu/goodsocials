@@ -4,7 +4,7 @@ import { getDb } from "@/db";
 import { oauthClient, oauthGrant } from "@/db/schema";
 
 /**
- * The authorization server behind the Claude connector. OAuth 2.1 the way the
+ * The authorization server behind the connector (Claude, ChatGPT or any MCP client). OAuth 2.1 the way the
  * MCP authorization spec asks for it: public clients, dynamic registration,
  * PKCE with S256 only, a short code, a short access token and a rotating
  * refresh token.

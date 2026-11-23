@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
+  account as accountTable,
   board as boardTable,
   brandPrinciple,
   card as cardTable,
@@ -23,6 +24,8 @@ import { boardZone, checkDay, nextSlot } from "@/lib/schedule";
 import { formatDayAndTime, publishSlot, type DayKey } from "@/lib/time";
 import { readFacts, type FactRow } from "@/lib/integrations/facts";
 import { runPublishQueue, type PublishOutcome } from "@/lib/publish";
+import { FREE_LIMITS, UPGRADE_LINE, usageFor } from "@/lib/tiers";
+import { canPublishCard } from "@/lib/billing";
 
 /**
  * Three actions, no fourth. Approve advances the card one column, Revise
@@ -278,11 +281,11 @@ async function qualityGate(
   );
   const ruled = issues.length > 0;
 
-  // The Claude connector asks for the rules only. The member's own Claude
-  // wrote the post in a chat where they read it, and running our editor on it
-  // would put the text cost back on our key, which is what the connector is
-  // for removing. A rules pass is not written down as a pass, so the board's
-  // own Approve still sends the same text past the editor.
+  // The connector's free tier asks for the rules only. The member's own chat
+  // wrote the post where they read it, and running our editor on it would put
+  // the text cost back on our key, which is what the free tier is for
+  // removing. A rules pass is not written down as a pass, so the board's own
+  // Approve still sends the same text past the editor. Paid runs both.
   if (!ruled && !editor) return null;
 
   if (!ruled) {
@@ -913,14 +916,15 @@ export async function addOwnIdea(
 }
 
 /*
- * The Claude connector's half of the board. lib/mcp/tools.ts calls these and
+ * The connector's half of the board. lib/mcp/tools.ts calls these and
  * nothing else, so a post written in a member's own Claude chat lands on the
  * same rows, passes the same rules and leaves the same log as one written here.
  *
- * What is different is who writes. These never call the text model: the text
- * arrives finished from the member's Claude, on their plan, and the connector
- * schedules it without a picture, because a picture is the one cost left on
- * our side. Approving the card on the board still adds one.
+ * What is different is who writes. These never call the text model to write:
+ * the text arrives finished from the member's own AI chat, on their plan, and
+ * the connector schedules it without a picture, because a picture is a cost on
+ * our side. On a paid plan the editor pass reviews it before it takes a slot.
+ * Approving the card on the board still adds a picture.
  */
 
 export type WrittenResult =
@@ -959,6 +963,14 @@ export async function addWrittenDraft(
     .limit(1);
   if (!row) return { ok: false, error: "No board for this profile." };
 
+  const usage = await usageFor(actor.accountId);
+  if (usage.draftsLeft === 0) {
+    return {
+      ok: false,
+      error: `The free plan keeps ${FREE_LIMITS.storedDrafts} drafts on the board at once. Schedule or reject one to make room. ${UPGRADE_LINE}`,
+    };
+  }
+
   let theme: string | null = null;
   if (input.themeId) {
     const [found] = await db
@@ -982,6 +994,7 @@ export async function addWrittenDraft(
       themeId: theme,
       state: "draft",
       draftText: text,
+      origin: "connector",
     })
     .returning({ id: cardTable.id });
 
@@ -1035,6 +1048,40 @@ export async function replaceDraftText(
 }
 
 /**
+ * Whether the account may give this card a slot at `publishAt`. Paid: yes.
+ * Free: a connector post while the month has room, and nothing the board's
+ * agent wrote, because the cron would hold that one for a plan anyway and a
+ * slot that never publishes is worse than a refusal now.
+ */
+async function allowance(
+  actor: Actor,
+  card: { origin: string; state: string },
+  publishAt: Date,
+): Promise<{ ok: true; paid: boolean } | { ok: false; error: string }> {
+  const usage = await usageFor(actor.accountId, publishAt);
+  if (usage.tier === "paid") return { ok: true, paid: true };
+
+  const [acct] = await getDb()
+    .select({ subscriptionStatus: accountTable.subscriptionStatus })
+    .from(accountTable)
+    .where(eq(accountTable.id, actor.accountId))
+    .limit(1);
+  if (acct && !canPublishCard(acct, card)) {
+    return {
+      ok: false,
+      error: `That post was written by the board's agent, which publishes on a plan. Rewrite it in the chat and save it with create_draft to post it free. ${UPGRADE_LINE}`,
+    };
+  }
+  if (card.origin === "connector" && card.state !== "scheduled" && usage.postsLeft === 0) {
+    return {
+      ok: false,
+      error: `The free plan publishes ${FREE_LIMITS.postsPerMonth} posts a month and that month is full. Pick a day next month, or start a plan. ${UPGRADE_LINE}`,
+    };
+  }
+  return { ok: true, paid: false };
+}
+
+/**
  * Approve with the day chosen, or the next free slot when none is. The rules in
  * lib/quality.ts still decide; the editor pass does not run (see qualityGate).
  */
@@ -1051,11 +1098,6 @@ export async function scheduleWritten(
   if (card.state === "rejected") return { ok: false, error: "That card was rejected." };
   if (!card.draftText) {
     return { ok: false, error: "That card is an idea with no text yet. Write the post first." };
-  }
-
-  if (card.state !== "scheduled") {
-    const stopped = await qualityGate(loaded, { editor: false });
-    if (stopped && !stopped.ok) return stopped;
   }
 
   const zone = boardZone(board.timezone);
@@ -1077,6 +1119,16 @@ export async function scheduleWritten(
       targetCadence: board.targetCadence,
       zone,
     });
+  }
+
+  const allowed = await allowance(actor, card, publishAt);
+  if (!allowed.ok) return allowed;
+
+  // Paid plans get the editor pass on top of the rules; it is the review the
+  // plan pays for. Free gets the rules, which cost nothing to run.
+  if (card.state !== "scheduled") {
+    const stopped = await qualityGate(loaded, { editor: allowed.paid });
+    if (stopped && !stopped.ok) return stopped;
   }
 
   const wasWaiting = card.state !== "scheduled";
@@ -1111,12 +1163,15 @@ export async function publishWrittenNow(
     return { ok: false, error: "That card is an idea with no text yet. Write the post first." };
   }
 
+  const now = new Date();
+  const allowed = await allowance(actor, card, now);
+  if (!allowed.ok) return allowed;
+
   if (card.state !== "scheduled") {
-    const stopped = await qualityGate(loaded, { editor: false });
+    const stopped = await qualityGate(loaded, { editor: allowed.paid });
     if (stopped && !stopped.ok) return stopped;
   }
 
-  const now = new Date();
   await place(card.id, profile.id, now, boardZone(board.timezone));
   if (card.state !== "scheduled") await log(card.id, "approve", actor.memberId);
 

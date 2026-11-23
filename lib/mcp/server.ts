@@ -1,4 +1,6 @@
-import { callTool, toolList } from "@/lib/mcp/tools";
+import { callTool, toolList } from "@/lib/mcp/registry";
+import { findSkill, SKILLS } from "@/lib/mcp/skills";
+import type { Ctx } from "@/lib/mcp/tool";
 
 /**
  * The Model Context Protocol over Streamable HTTP, stateless, answered with
@@ -28,12 +30,24 @@ type JsonRpcResponse = {
   error?: { code: number; message: string };
 };
 
+/**
+ * Sent at initialize. Written for any model in any client: Claude, ChatGPT,
+ * Le Chat and the rest all read the same words.
+ */
 const INSTRUCTIONS = [
-  "GoodSocials keeps a LinkedIn posting board for this member: brand principles, themes, a queue and a publisher.",
-  "You write the posts. Start with get_brand_context, write in that voice and within its rules, and save with create_draft.",
-  "Show the member the final text before schedule_post, and only call publish_now when they ask for it to go out now.",
-  "When the member corrects something that should hold for every post, update the matching brand principle too.",
+  "GoodSocials keeps this member's social media board: brand principles, themes, business data, a queue and a publisher for LinkedIn, with share links for X, Instagram, Facebook and more.",
+  "You write the posts in this chat. Call read_skill first for the playbook, then get_brand_context and get_business_data.",
+  "Show the member every post before saving, and never schedule, publish or share without their explicit yes.",
 ].join(" ");
+
+const PROMPTS = [
+  {
+    name: "write_post",
+    title: "Write a post with GoodSocials",
+    description: "Write one post from the member's brand and business data, check it, and save it to the board.",
+    arguments: [{ name: "topic", description: "What the post is about, if the member has an idea.", required: false }],
+  },
+];
 
 function isRequest(value: unknown): value is JsonRpcRequest {
   return (
@@ -54,7 +68,7 @@ export function rpcError(
 
 /** One message in, a response out, or null for a notification. */
 export async function handleMessage(
-  memberId: string,
+  ctx: Ctx,
   message: unknown,
 ): Promise<JsonRpcResponse | null> {
   if (!isRequest(message)) return rpcError(null, -32600, "Not a JSON-RPC 2.0 request.");
@@ -71,7 +85,11 @@ export async function handleMessage(
         id,
         result: {
           protocolVersion: SUPPORTED.includes(asked) ? asked : LATEST,
-          capabilities: { tools: { listChanged: false } },
+          capabilities: {
+            tools: { listChanged: false },
+            resources: { listChanged: false },
+            prompts: { listChanged: false },
+          },
           serverInfo: { name: "goodsocials", title: "GoodSocials", version: "0.1.0" },
           instructions: INSTRUCTIONS,
         },
@@ -86,14 +104,62 @@ export async function handleMessage(
       return {
         jsonrpc: "2.0",
         id,
-        result: await callTool(memberId, name, params?.arguments),
+        result: await callTool(ctx, name, params?.arguments),
       };
     }
-    // Asked for by some clients whatever the capabilities say. Empty is honest.
+    // The skills again, for clients that read resources and prompts. Tools
+    // are what every client supports; these are the same text.
     case "resources/list":
-      return { jsonrpc: "2.0", id, result: { resources: [] } };
+      return {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          resources: SKILLS.map((k) => ({
+            uri: `goodsocials://skill/${k.name}`,
+            name: k.name,
+            title: k.title,
+            description: k.description,
+            mimeType: "text/markdown",
+          })),
+        },
+      };
+    case "resources/templates/list":
+      return { jsonrpc: "2.0", id, result: { resourceTemplates: [] } };
+    case "resources/read": {
+      const uri = typeof params?.uri === "string" ? params.uri : "";
+      const skill = findSkill(uri.replace(/^goodsocials:\/\/skill\//, ""));
+      if (!skill || !uri.startsWith("goodsocials://skill/")) {
+        return rpcError(id, -32002, `No resource at ${uri}.`);
+      }
+      return {
+        jsonrpc: "2.0",
+        id,
+        result: { contents: [{ uri, mimeType: "text/markdown", text: skill.text() }] },
+      };
+    }
     case "prompts/list":
-      return { jsonrpc: "2.0", id, result: { prompts: [] } };
+      return { jsonrpc: "2.0", id, result: { prompts: PROMPTS } };
+    case "prompts/get": {
+      if (params?.name !== "write_post") return rpcError(id, -32602, "Unknown prompt.");
+      const args = (params?.arguments ?? {}) as Record<string, unknown>;
+      const topic = typeof args.topic === "string" && args.topic.trim() ? args.topic.trim() : null;
+      return {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          description: PROMPTS[0].description,
+          messages: [
+            {
+              role: "user",
+              content: {
+                type: "text",
+                text: `Using GoodSocials, write one post${topic ? ` about ${topic}` : " from my business data"}. Read the playbook with read_skill, then get_brand_context and get_business_data. Check it with check_post, show it to me, and save it with create_draft once I say yes.`,
+              },
+            },
+          ],
+        },
+      };
+    }
     default:
       return rpcError(id, -32601, `Unknown method ${method}.`);
   }

@@ -18,7 +18,19 @@ import {
   scheduleWritten,
 } from "@/lib/cards";
 import { factsBrief, readFacts } from "@/lib/integrations/facts";
-import { loadAccess, seatName, type Actor } from "@/lib/profiles";
+import { listNotes, notesBrief } from "@/lib/business-notes";
+import { usageFor, usageLine } from "@/lib/tiers";
+import { loadAccess, seatName } from "@/lib/profiles";
+import {
+  actorFor,
+  ok,
+  postArg,
+  postText,
+  profileArg,
+  refuse,
+  tool,
+  type Tool,
+} from "@/lib/mcp/tool";
 import {
   BANNED_PHRASES,
   BANNED_WORDS,
@@ -32,98 +44,16 @@ import { formatDayAndTime, isDayKey, todayKey } from "@/lib/time";
 import { connectionLine } from "@/lib/token-expiry";
 
 /**
- * The tools the Claude connector offers. Every one of them is a thin call into
+ * The board tools the connector offers. Every one of them is a thin call into
  * lib/cards.ts or a read of the same rows the board reads, so the connector
  * cannot do anything to a card that the board could not.
  *
- * None of them generate text. The member's own Claude writes in their own
- * chat, on their own plan, and these tools hand it the context it needs to
+ * None of them generate text. The member's own AI chat (Claude, ChatGPT or any
+ * other MCP client) writes, on the member's own plan, and these tools hand it the context it needs to
  * write well (the principles, the themes, the readings, the rules) and take the
  * finished post back. That is the whole point of the connector: the text cost
- * moves from our ANTHROPIC_API_KEY to the member's Claude subscription.
+ * moves from our ANTHROPIC_API_KEY to the member's own subscription.
  */
-
-export type ToolResult = {
-  content: { type: "text"; text: string }[];
-  structuredContent?: Record<string, unknown>;
-  isError?: boolean;
-};
-
-type Tool<S extends z.ZodType> = {
-  name: string;
-  title: string;
-  description: string;
-  input: S;
-  annotations: {
-    readOnlyHint?: boolean;
-    destructiveHint?: boolean;
-    idempotentHint?: boolean;
-    openWorldHint?: boolean;
-  };
-  run: (memberId: string, args: z.infer<S>) => Promise<ToolResult>;
-};
-
-function tool<S extends z.ZodType>(t: Tool<S>): Tool<S> {
-  return t;
-}
-
-function ok(text: string, data?: Record<string, unknown>): ToolResult {
-  return { content: [{ type: "text", text }], structuredContent: data };
-}
-
-function refuse(text: string): ToolResult {
-  return { content: [{ type: "text", text }], isError: true };
-}
-
-// ---------------------------------------------------------------------------
-// Who is acting
-
-/**
- * The connector's version of resolveActor. No cookie says which profile the
- * member is looking at, so the tool names it, and the owner's own profile is
- * the default because it is the one seat every account has.
- */
-async function actorFor(
-  memberId: string,
-  profileId?: string,
-): Promise<{ ok: true; actor: Actor } | { ok: false; error: string }> {
-  const access = await loadAccess(memberId);
-  if (!access) {
-    return { ok: false, error: "This GoodSocials login has no account yet. Sign in at goodsocials.co and finish setting up the board." };
-  }
-  const seat = profileId
-    ? access.seats.find((s) => s.profile.id === profileId)
-    : (access.seats.find((s) => s.profile.linkedinMemberId === access.account.ownerMemberId) ??
-      access.seats[0]);
-  if (!seat) {
-    return {
-      ok: false,
-      error: profileId
-        ? "That profile is not on this account. Call list_profiles for the ids."
-        : "This account has no profile yet. Finish onboarding at goodsocials.co first.",
-    };
-  }
-  return {
-    ok: true,
-    actor: { memberId, accountId: access.account.id, profileId: seat.profile.id },
-  };
-}
-
-const profileArg = z
-  .string()
-  .uuid()
-  .optional()
-  .describe("Which profile, from list_profiles. Leave out for the account owner's own profile.");
-
-const postArg = z.string().uuid().describe("The post id, from list_posts or create_draft.");
-
-const postText = z
-  .string()
-  .min(20)
-  .max(3000)
-  .describe(
-    `The full post as it should appear on LinkedIn, plain text with line breaks. ${MIN_LENGTH} to ${MAX_LENGTH - 1} characters. **double asterisks** turn into bold.`,
-  );
 
 // ---------------------------------------------------------------------------
 // Reading
@@ -147,7 +77,7 @@ const listProfiles = tool({
     "The LinkedIn profiles this GoodSocials account posts as, with their ids and whether each LinkedIn connection is still alive. One profile for most people, up to 12 for an agency.",
   input: z.object({}),
   annotations: { readOnlyHint: true, openWorldHint: false },
-  async run(memberId) {
+  async run({ memberId }) {
     const access = await loadAccess(memberId);
     if (!access) return refuse("This login has no GoodSocials account yet.");
     const profiles = access.seats.map((s) => ({
@@ -172,7 +102,7 @@ const getBrandContext = tool({
     "Everything needed to write a post for this profile: the three brand principles (voice, visual, format), the themes the profile is known for, the goal, the cadence, real numbers read from connected tools, the openings of recent posts so nothing repeats, and the writing rules every post must pass before it can be scheduled. Call this before writing.",
   input: z.object({ profile_id: profileArg }),
   annotations: { readOnlyHint: true, openWorldHint: false },
-  async run(memberId, args) {
+  async run({ memberId }, args) {
     const who = await actorFor(memberId, args.profile_id);
     if (!who.ok) return refuse(who.error);
     const { profileId } = who.actor;
@@ -186,7 +116,7 @@ const getBrandContext = tool({
       .limit(1);
     if (!row) return refuse("This profile has no board yet. Finish onboarding at goodsocials.co first.");
 
-    const [principles, themes, facts, recent] = await Promise.all([
+    const [principles, themes, facts, recent, notes, usage] = await Promise.all([
       db.select().from(brandPrinciple).where(eq(brandPrinciple.profileId, profileId)),
       db
         .select()
@@ -209,6 +139,8 @@ const getBrandContext = tool({
         )
         .orderBy(desc(cardTable.updatedAt))
         .limit(10),
+      listNotes(profileId),
+      usageFor(who.actor.accountId),
     ]);
 
     const zone = boardZone(row.board.timezone);
@@ -229,6 +161,9 @@ const getBrandContext = tool({
         : "No themes yet.",
       "## Readings from connected tools",
       factsBrief(facts) || "Nothing connected. Do not invent numbers.",
+      notesBrief(notes),
+      "## Plan",
+      usageLine(usage),
       "## Recent and scheduled posts (do not repeat their openings)",
       recent.length
         ? recent
@@ -259,7 +194,7 @@ const listPosts = tool({
     limit: z.number().int().min(1).max(50).optional().describe("At most this many. Default 20."),
   }),
   annotations: { readOnlyHint: true, openWorldHint: false },
-  async run(memberId, args) {
+  async run({ memberId }, args) {
     const who = await actorFor(memberId, args.profile_id);
     if (!who.ok) return refuse(who.error);
     const db = getDb();
@@ -322,7 +257,7 @@ const getPost = tool({
   description: "The full text and state of one card on the board.",
   input: z.object({ post_id: postArg }),
   annotations: { readOnlyHint: true, openWorldHint: false },
-  async run(memberId, args) {
+  async run({ memberId }, args) {
     const who = await actorFor(memberId);
     if (!who.ok) return refuse(who.error);
     const [row] = await getDb()
@@ -379,7 +314,7 @@ const createDraft = tool({
       .describe("framework: a method; data: a breakdown of numbers; receipt: a result with the author's own number; finding: anything else."),
   }),
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-  async run(memberId, args) {
+  async run({ memberId }, args) {
     const who = await actorFor(memberId, args.profile_id);
     if (!who.ok) return refuse(who.error);
     const result = await addWrittenDraft(who.actor, {
@@ -408,7 +343,7 @@ const updateDraft = tool({
     note: z.string().max(2000).optional().describe("What the member asked to change, in their words. Kept in the card's history."),
   }),
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  async run(memberId, args) {
+  async run({ memberId }, args) {
     const who = await actorFor(memberId);
     if (!who.ok) return refuse(who.error);
     const result = await replaceDraftText(who.actor, args.post_id, args.text, args.note);
@@ -429,7 +364,7 @@ const updatePrinciple = tool({
     text: z.string().min(10).max(2000).describe("The complete new principle."),
   }),
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  async run(memberId, args) {
+  async run({ memberId }, args) {
     const who = await actorFor(memberId, args.profile_id);
     if (!who.ok) return refuse(who.error);
     const updated = await getDb()
@@ -463,7 +398,7 @@ const schedulePost = tool({
       .describe("YYYY-MM-DD in the profile's time zone. Leave out for the next free slot."),
   }),
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-  async run(memberId, args) {
+  async run({ memberId }, args) {
     if (args.day && !isDayKey(args.day)) return refuse("Give the day as YYYY-MM-DD.");
     const who = await actorFor(memberId);
     if (!who.ok) return refuse(who.error);
@@ -480,7 +415,7 @@ const publishNow = tool({
     "Publishes a post to the profile's LinkedIn feed immediately. This is public and cannot be undone from here. Only call it when the member has explicitly asked to post it now, after reading the final text.",
   input: z.object({ post_id: postArg }),
   annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-  async run(memberId, args) {
+  async run({ memberId }, args) {
     const who = await actorFor(memberId);
     if (!who.ok) return refuse(who.error);
     const result = await publishWrittenNow(who.actor, args.post_id);
@@ -503,7 +438,7 @@ const unschedulePost = tool({
   description: "Takes a scheduled post out of the publish queue and back to the board, keeping its text.",
   input: z.object({ post_id: postArg }),
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  async run(memberId, args) {
+  async run({ memberId }, args) {
     const who = await actorFor(memberId);
     if (!who.ok) return refuse(who.error);
     const [c] = await getDb()
@@ -527,7 +462,7 @@ const rejectPost = tool({
   description: "Takes a card off the board. It stays in the history, but never publishes.",
   input: z.object({ post_id: postArg }),
   annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-  async run(memberId, args) {
+  async run({ memberId }, args) {
     const who = await actorFor(memberId);
     if (!who.ok) return refuse(who.error);
     const result = await rejectCard(who.actor, args.post_id);
@@ -539,7 +474,7 @@ const rejectPost = tool({
 // Typed loosely here so the list can hold tools with different inputs. Each
 // tool's own input schema is still what parses its arguments.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const TOOLS: Tool<any>[] = [
+export const BOARD_TOOLS: Tool<any>[] = [
   getBrandContext,
   listProfiles,
   listPosts,
@@ -552,34 +487,3 @@ export const TOOLS: Tool<any>[] = [
   unschedulePost,
   rejectPost,
 ];
-
-export function toolList() {
-  return TOOLS.map((t) => ({
-    name: t.name,
-    title: t.title,
-    description: t.description,
-    inputSchema: z.toJSONSchema(t.input, { target: "draft-7" }),
-    annotations: { title: t.title, ...t.annotations },
-  }));
-}
-
-export async function callTool(
-  memberId: string,
-  name: string,
-  rawArgs: unknown,
-): Promise<ToolResult> {
-  const t = TOOLS.find((x) => x.name === name);
-  if (!t) return refuse(`There is no tool called ${name}.`);
-  const parsed = t.input.safeParse(rawArgs ?? {});
-  if (!parsed.success) {
-    return refuse(
-      `The arguments did not fit: ${parsed.error.issues.map((i: z.core.$ZodIssue) => `${i.path.join(".") || "input"} ${i.message}`).join("; ")}`,
-    );
-  }
-  try {
-    return await t.run(memberId, parsed.data);
-  } catch (cause) {
-    console.error(`[mcp] ${name} failed:`, cause);
-    return refuse("Something went wrong on the GoodSocials side. Try again in a minute.");
-  }
-}

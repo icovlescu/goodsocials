@@ -290,7 +290,7 @@ export async function deleteAccountAction(typed: string): Promise<SaveResult> {
 }
 
 /**
- * Cuts off one Claude connector grant. Its access and refresh tokens stop in
+ * Cuts off one connector grant. Its access and refresh tokens stop in
  * the same write, so Claude has to ask the member again.
  */
 export async function disconnectClaude(grantId: string): Promise<void> {

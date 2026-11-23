@@ -2,9 +2,10 @@ import { headers } from "next/headers";
 import { disconnectClaude } from "@/app/settings/actions";
 import { MCP_PATH } from "@/lib/oauth/metadata";
 import { connectedApps } from "@/lib/oauth/server";
+import { FREE_LIMITS } from "@/lib/tiers";
 
 /**
- * The Claude connector, in settings: the URL to paste into Claude and the apps
+ * The connector, in settings: the URL to paste into Claude and the apps
  * that hold a grant, each with a way to cut it off. The URL is built from the
  * request's own host, so a preview shows the preview's connector.
  */
@@ -17,13 +18,15 @@ export async function ClaudeConnector({ memberId }: { memberId: string }) {
 
   return (
     <section id="claude" className="mt-8 max-w-[760px] scroll-mt-[calc(var(--nav-h)+24px)]">
-      <h2 className="text-[13px] font-medium text-ink-2">Write in Claude</h2>
+      <h2 className="text-[13px] font-medium text-ink-2">Write in your AI chat</h2>
       <p className="mt-2 max-w-[560px] text-[13px] leading-[1.4] text-ink-2">
-        Add GoodSocials as a connector in Claude and write posts in your own
-        chat, on your own Claude plan. Claude reads your principles and themes,
-        saves drafts to this board, and schedules what you approve. In Claude
-        open Settings, then Connectors, then Add custom connector, and paste
-        this address.
+        Add GoodSocials as a connector in Claude, ChatGPT or another chat app
+        that supports MCP connectors, and write posts in your own chat on your
+        own plan. The chat reads your principles, themes and business data,
+        saves drafts to this board, and schedules or shares what you approve.
+        In Claude open Settings, then Connectors, then Add custom connector,
+        and paste this address. The free plan includes {FREE_LIMITS.postsPerMonth}{" "}
+        posts a month and {FREE_LIMITS.storedDrafts} drafts on the board at once.
       </p>
       <ul className="mt-2">
         <li className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 border-b border-hairline py-[14px]">

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CardActions } from "./card-actions";
 import { ImageLightbox } from "./image-lightbox";
+import { ShareElsewhere } from "./share-elsewhere";
 import { PostText } from "@/components/post-text";
 import { COLUMN_LABEL, type Column } from "@/lib/board";
 import type { QualityIssue } from "@/lib/quality";
@@ -178,6 +179,8 @@ export function CardModal({
           onAdvance={onClose}
           initialComment={prefill?.text}
         />
+
+        {state !== "idea" && body ? <ShareElsewhere cardId={id} /> : null}
 
         <button
           type="button"

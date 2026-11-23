@@ -22,6 +22,8 @@ import {
 } from "@/lib/cards";
 import { isDayKey, isZone } from "@/lib/time";
 import { resolveActor, type Actor } from "@/lib/profiles";
+import { isPlatform } from "@/lib/platforms/registry";
+import { markShared, shareOptions, type ShareOption } from "@/lib/variants";
 import { COLUMNS, type Column } from "@/lib/board";
 
 const KINDS = new Set(["voice", "visual", "format"]);
@@ -250,4 +252,21 @@ export async function saveTheme(
 
   revalidatePath("/board");
   return { ok: true };
+}
+
+/** The board's share panel: every platform, with the text and the link. */
+export async function loadShareOptions(cardId: string): Promise<ShareOption[] | null> {
+  const who = await actor();
+  if (!who) return null;
+  return shareOptions(who, cardId);
+}
+
+/**
+ * The member opened a share link or copied the text. Recorded as handed over,
+ * because whether they pressed Post on the other platform is not ours to see.
+ */
+export async function recordShare(cardId: string, platform: string, text: string): Promise<void> {
+  const who = await actor();
+  if (!who || !isPlatform(platform)) return;
+  await markShared(who, cardId, platform, text);
 }

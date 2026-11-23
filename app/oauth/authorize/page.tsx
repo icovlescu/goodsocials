@@ -7,7 +7,7 @@ import { checkAuthorize, denyUrl, issueCode } from "@/lib/oauth/server";
 import { TEST_LOGIN_PROVIDER, testLoginEnabled } from "@/lib/test-login";
 
 export const metadata = {
-  title: "Connect Claude | GoodSocials",
+  title: "Connect an AI chat | GoodSocials",
   robots: { index: false },
 };
 
@@ -50,7 +50,8 @@ function fromForm(data: FormData): Params {
 }
 
 /**
- * The consent screen for the Claude connector.
+ * The consent screen for the connector, whichever chat app is asking:
+ * Claude, ChatGPT or any other client that speaks MCP with OAuth.
  *
  * The member proves who they are with the same LinkedIn sign in the board
  * uses, then says yes or no to one app. Allow and Deny both run the checks
@@ -80,7 +81,7 @@ export default async function AuthorizePage({
 
   if (!session?.memberId) {
     return (
-      <Shell title="Sign in to connect Claude.">
+      <Shell title="Sign in to connect your AI chat.">
         <p className="mt-3 text-ink-2">
           {request.client.name} wants to work on your GoodSocials board. Sign in
           first, then you choose whether to allow it.
@@ -152,20 +153,20 @@ export default async function AuthorizePage({
   return (
     <Shell title={`Allow ${request.client.name} to use your board?`}>
       <p className="mt-3 text-ink-2">
-        Claude writes the posts in your own chat, on your own Claude plan.
-        GoodSocials keeps the board, your brand principles and the schedule,
-        and publishes to LinkedIn.
+        {request.client.name} writes the posts in your own chat, on your own
+        plan with it. GoodSocials keeps the board, your brand principles, your
+        business data and the schedule, and publishes what you approve.
       </p>
       <ul className="mt-8 text-[14px] text-ink-2">
         <li className="border-t border-hairline py-[12px]">
-          Read your brand principles, themes and connected numbers
+          Read your brand principles, themes, business notes and connected numbers
           {profiles > 1 ? `, for all ${profiles} profiles on this account` : ""}.
         </li>
         <li className="border-t border-hairline py-[12px]">
           Add and edit drafts, and change a brand principle when you ask it to.
         </li>
         <li className="border-y border-hairline py-[12px]">
-          Schedule and publish a post only when you tell it to in the chat.
+          Schedule, publish or share a post only when you tell it to in the chat.
         </li>
       </ul>
       <p className="mt-4 text-[13px] text-ink-3">

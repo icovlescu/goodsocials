@@ -236,29 +236,37 @@ export const DOCS: DocSection[] = [
   },
   {
     id: "claude",
-    title: "Writing in Claude",
+    title: "Writing in Claude, ChatGPT or another AI chat",
     blocks: [
       {
         type: "p",
-        text: "GoodSocials works as a connector in Claude. Claude writes the posts in your own chat, on your own Claude plan, and GoodSocials keeps the board, your brand principles, the schedule and the LinkedIn connection.",
+        text: "GoodSocials works as a connector in any chat app that supports remote MCP connectors, Claude and ChatGPT among them. The chat writes the posts, on your own plan with it, and GoodSocials keeps the board, your brand principles, your business data, the schedule and the LinkedIn connection.",
       },
       {
         type: "steps",
         items: [
-          "In Claude, open Settings, then Connectors, and choose Add custom connector.",
-          "Name it GoodSocials and paste https://goodsocials.co/api/mcp as the URL. Settings in GoodSocials shows the same address under Write in Claude.",
-          "Press Connect. Claude opens GoodSocials, you sign in with LinkedIn, and you press Allow.",
-          "In a new chat, ask Claude to write a LinkedIn post. It reads your principles and themes first, then saves the post to Draft on your board.",
+          "In Claude, open Settings, then Connectors, and choose Add custom connector. In ChatGPT, turn on developer mode and add a connector the same way.",
+          "Name it GoodSocials and paste https://goodsocials.co/api/mcp as the URL. Settings in GoodSocials shows the same address under Write in your AI chat.",
+          "Press Connect. GoodSocials opens, you sign in with LinkedIn, and you press Allow.",
+          "In a new chat, ask for a LinkedIn post. The chat reads the GoodSocials playbook, your principles, themes and business data first, then saves the post to Draft on your board.",
           "Ask for changes in the chat. When you say to schedule it, the post takes the next free 09:00 slot, or the day you name.",
+          "Ask for versions for X, Instagram, Facebook, Threads or Bluesky. Each one is checked against that platform's limits and saved on the card.",
+        ],
+      },
+      {
+        type: "list",
+        items: [
+          "Free: 5 posts a month reach a feed, 5 drafts wait on the board at once, and other platforms get a share link that opens them with your post filled in.",
+          "Paid: no monthly limit, an editor review of every post before it takes a slot, the board's own agent, and publishing through each platform's API at the time you pick.",
         ],
       },
       {
         type: "p",
-        text: "Claude can read your principles, themes and connected numbers, add and edit drafts, change a principle when you correct it, schedule, unschedule and publish. It publishes only when you tell it to. Posts scheduled from Claude go out as text. Approve one on the board to add a picture.",
+        text: "You approve every post by hand. Share opens the platform with your post filled in, and you press Post there yourself. Automatic publishing, on paid plans, sends the post you approved through that platform's own API at the time you picked, under the permissions you granted it. Today that is LinkedIn; the others follow as their API access arrives.",
       },
       {
         type: "p",
-        text: "To cut Claude off, press Disconnect under Write in Claude in settings, or remove the connector in Claude.",
+        text: "To cut a chat off, press Disconnect under Write in your AI chat in settings, or remove the connector in the chat app.",
       },
     ],
   },

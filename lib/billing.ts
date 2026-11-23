@@ -75,6 +75,28 @@ export function canPublish(
   return PUBLISHING.includes(account.subscriptionStatus);
 }
 
+/**
+ * A subscription Stripe says is running, whatever the payments flag says.
+ * The free and paid tiers in lib/tiers.ts are a product rule rather than a
+ * billing screen, so hiding prices does not make every account paid.
+ */
+export function isSubscribed(account: Pick<Account, "subscriptionStatus">): boolean {
+  return PUBLISHING.includes(account.subscriptionStatus);
+}
+
+/**
+ * canPublish for one card. A post written in the member's own AI chat and
+ * saved through the connector publishes on the free tier too: its monthly
+ * allowance was counted when it took a slot (lib/tiers.ts), so the cron does
+ * not count it again. Everything the board's agent wrote still needs a plan.
+ */
+export function canPublishCard(
+  account: Pick<Account, "subscriptionStatus">,
+  card: { origin: string },
+): boolean {
+  return canPublish(account) || card.origin === "connector";
+}
+
 /** The plan an account is on, named the way the pricing page names it. */
 export function planOf(account: Pick<Account, "plan">): Plan {
   return planForColumn(account.plan);

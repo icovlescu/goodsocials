@@ -265,6 +265,13 @@ export const card = pgTable(
     postUrn: text("post_urn"),
     /** Ordering within a column only. Never the column itself. */
     position: integer("position").notNull().default(0),
+    /**
+     * Who wrote it: `board` for the agent on our key, `connector` for a post
+     * written in the member's own AI chat and saved through the MCP server.
+     * The free tier is counted on `connector` rows, and only those publish
+     * for an account with no subscription. lib/tiers.ts.
+     */
+    origin: text("origin").notNull().default("board"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -651,4 +658,65 @@ export const oauthGrant = pgTable(
       .defaultNow(),
   },
   (t) => [index("oauth_grant_member_idx").on(t.memberId)],
+);
+
+/**
+ * The same post, rewritten for another platform. The card's own text is the
+ * LinkedIn version, because LinkedIn is the platform the queue and the cron
+ * publish to; every other platform is a row here, one per card per platform.
+ *
+ * `platform` is text checked against lib/platforms/registry.ts rather than an
+ * enum, so adding Threads or Bluesky is a registry entry and not a migration.
+ *
+ * `status`: `draft` while it is only text, `manual` once the member was handed
+ * the text and a compose link to post it themselves (the free route),
+ * `queued` when an automated adapter holds it, `published` once a platform
+ * accepted it, `failed` with `last_error` when one refused.
+ */
+export const postVariant = pgTable(
+  "post_variant",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    cardId: uuid("card_id")
+      .notNull()
+      .references(() => card.id, { onDelete: "cascade" }),
+    platform: text("platform").notNull(),
+    text: text("text").notNull(),
+    status: text("status").notNull().default("draft"),
+    publishAt: timestamp("publish_at", { withTimezone: true }),
+    pushedAt: timestamp("pushed_at", { withTimezone: true }),
+    externalUrl: text("external_url"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [uniqueIndex("post_variant_card_platform_unique").on(t.cardId, t.platform)],
+);
+
+/**
+ * Something true about the business that the member told their AI chat, and
+ * the chat saved through the connector: "Signed three universities in
+ * October", "The NGO tier costs 20 EUR". The hand-curated sibling of `fact`,
+ * for what no API reports. Kept per profile, capped in lib/business-notes.ts,
+ * and read by the connector's tools only, so the board's own prompts stay the
+ * size they were costed at.
+ */
+export const businessNote = pgTable(
+  "business_note",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => profile.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("business_note_profile_idx").on(t.profileId)],
 );

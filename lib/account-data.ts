@@ -16,6 +16,7 @@ import {
   scheduledPost,
   source as sourceTable,
   theme as themeTable,
+  oauthGrant,
 } from "@/db/schema";
 import { endBilling, type Account } from "@/lib/billing";
 
@@ -210,6 +211,9 @@ export async function deleteAccount(account: Account): Promise<DeleteResult> {
   await db
     .delete(linkedinCallBudget)
     .where(inArray(linkedinCallBudget.memberId, members));
+  // Connector grants are keyed the same way. A closed account's chat loses
+  // its token in the same request.
+  await db.delete(oauthGrant).where(eq(oauthGrant.memberId, account.ownerMemberId));
 
   const urls = images
     .map((row) => row.url)

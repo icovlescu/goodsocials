@@ -3,8 +3,8 @@ import { memberForToken } from "@/lib/oauth/server";
 import { handleMessage, rpcError } from "@/lib/mcp/server";
 
 /**
- * The Claude connector. The URL a member pastes into Claude is this route on
- * goodsocials.co. Without a token it answers 401 and points at the discovery
+ * The connector. The URL a member pastes into Claude, ChatGPT or any other
+ * chat that supports remote MCP servers is this route on goodsocials.co. Without a token it answers 401 and points at the discovery
  * document, which is how Claude finds the sign in.
  */
 export const runtime = "nodejs";
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
   const messages = Array.isArray(body) ? body : [body];
   const answers = [];
   for (const message of messages) {
-    const answer = await handleMessage(memberId, message);
+    const answer = await handleMessage({ memberId, origin: originOf(request) }, message);
     if (answer) answers.push(answer);
   }
 
