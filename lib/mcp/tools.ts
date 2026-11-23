@@ -40,6 +40,7 @@ import {
   heldIssues,
 } from "@/lib/quality";
 import { boardZone } from "@/lib/schedule";
+import { PLACEHOLDER_PREFIX } from "@/lib/board";
 import { formatDayAndTime, isDayKey, todayKey } from "@/lib/time";
 import { connectionLine } from "@/lib/token-expiry";
 
@@ -147,7 +148,11 @@ const getBrandContext = tool({
     const principle = (kind: string) =>
       principles.find((p) => p.kind === kind)?.text ?? "(not written yet)";
 
+    const unset = principles.length === 0 || principles.every((p) => p.text.startsWith(PLACEHOLDER_PREFIX));
     const sections = [
+      unset
+        ? "**This board has no brand yet.** Read the member's website or ask them about their work, draft the three principles and four themes, show them, and save with set_up_brand before writing a post."
+        : null,
       `# ${row.profile.name ?? "This profile"}`,
       `Profile id ${profileId}. Site: ${row.board.siteUrl ?? "none"}. Goal: ${row.board.goal}. Cadence: ${row.board.targetCadence} posts a week, each at 09:00 ${zone}. Today there is ${todayKey(zone)}.`,
       "## Brand principles",
@@ -177,7 +182,7 @@ const getBrandContext = tool({
       WRITING_RULES.join("\n"),
     ];
 
-    return ok(sections.join("\n\n"));
+    return ok(sections.filter((x) => x !== null).join("\n\n"));
   },
 });
 

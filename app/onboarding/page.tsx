@@ -25,6 +25,8 @@ import { PLAN_COOKIE, planFromSlug } from "@/lib/plans";
 import { seatName } from "@/lib/profiles";
 import { callStripe } from "@/lib/stripe/client";
 import { track } from "@/lib/track";
+import { serverWriting } from "@/lib/flags";
+import { ChatSetup } from "@/components/onboarding/chat-setup";
 
 export const metadata = { title: "Your first post" };
 export const maxDuration = 120;
@@ -46,6 +48,10 @@ export default async function OnboardingPage({
 
   const { access, seat, view } = entry;
   const profileId = seat.profile.id;
+
+  // No model of our own on this deployment: the member's AI chat writes the
+  // brand through the connector instead of the funnel. lib/flags.ts.
+  if (!serverWriting()) return <ChatSetup name={seat.profile.name} />;
   const params = await searchParams;
   const actor = await funnelActor();
   let trialStartedEventId: string | null = null;

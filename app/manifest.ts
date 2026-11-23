@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { withBase } from "@/lib/base-path";
 
 /**
  * What a phone uses when somebody adds the board to their home screen. The
@@ -13,9 +14,9 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: "/board",
     display: "standalone",
     icons: [
-      { src: "/icon.svg", sizes: "any", type: "image/svg+xml" },
-      { src: "/apple-icon.png", sizes: "180x180", type: "image/png" },
-      { src: "/avatar-400.png", sizes: "400x400", type: "image/png" },
+      { src: withBase("/icon.svg"), sizes: "any", type: "image/svg+xml" },
+      { src: withBase("/apple-icon.png"), sizes: "180x180", type: "image/png" },
+      { src: withBase("/avatar-400.png"), sizes: "400x400", type: "image/png" },
     ],
   };
 }

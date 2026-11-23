@@ -13,6 +13,7 @@ import { planMoreIdeas } from "@/lib/cards";
 import { loadAccess, setActiveProfile, type Access } from "@/lib/profiles";
 import { isZone } from "@/lib/time";
 import { revokeGrant } from "@/lib/oauth/server";
+import { serverWriting } from "@/lib/flags";
 import {
   IMPORT_CHUNK,
   PAST_POST_MAX_TEXT,
@@ -155,6 +156,15 @@ export async function saveWebsite(input: string): Promise<SaveResult> {
     .limit(1);
   if (!brd) return { ok: false, error: "No board for this profile." };
   if (brd.siteUrl === url) return { ok: false, error: "That is the website we have already." };
+
+  // Without our key the brand is rewritten from the member's AI chat, with
+  // set_up_brand, rather than half rewritten here.
+  if (!serverWriting()) {
+    return {
+      ok: false,
+      error: "Rewriting the brand from a website needs a paid plan. Ask your AI chat to read the site and update your brand with the GoodSocials connector.",
+    };
+  }
 
   const site = await fetchSiteText(url);
   if (!site.ok) return { ok: false, error: site.error };

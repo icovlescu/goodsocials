@@ -5,6 +5,7 @@ import { listSources } from "@/lib/integrations/sources";
 import { findSkill, SKILLS } from "@/lib/mcp/skills";
 import { actorFor, ok, profileArg, refuse, tool, type Tool } from "@/lib/mcp/tool";
 import { usageFor, usageLine } from "@/lib/tiers";
+import { setUpBrand } from "@/lib/brand-setup";
 
 /**
  * Business data and skills: what the chat reads to write a post worth
@@ -146,9 +147,47 @@ const connectDataSource = tool({
   },
 });
 
+
+const setUpBrandTool = tool({
+  name: "set_up_brand",
+  title: "Set up the brand",
+  description:
+    "Writes the profile's brand in one go: the three principles (voice: how posts sound; format: how they are laid out; visual: what images look like), two to six themes the profile is known for (four is usual), and optionally the website, goal and posts per week. Finishes onboarding, so the board opens. Use it for a new board, or when the member wants the brand rewritten. Read the member's website or ask them first, show them what you wrote, and save on their yes. Replaces the existing themes.",
+  input: z.object({
+    profile_id: profileArg,
+    site_url: z.string().url().optional(),
+    voice: z.string().min(20).max(2000),
+    format: z.string().min(20).max(2000),
+    visual: z.string().min(20).max(2000),
+    themes: z
+      .array(z.object({ title: z.string().min(2).max(60), description: z.string().min(10).max(400) }))
+      .min(2)
+      .max(6),
+    goal: z.enum(["interesting", "followers", "traffic", "leads", "engagement"]).optional(),
+    posts_per_week: z.number().int().min(1).max(7).optional(),
+  }),
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  async run({ memberId, origin }, args) {
+    const who = await actorFor(memberId, args.profile_id);
+    if (!who.ok) return refuse(who.error);
+    const r = await setUpBrand(who.actor.profileId, {
+      siteUrl: args.site_url,
+      principles: { voice: args.voice, format: args.format, visual: args.visual },
+      themes: args.themes,
+      goal: args.goal,
+      postsPerWeek: args.posts_per_week,
+    });
+    if (!r.ok) return refuse(r.error);
+    return ok(
+      `The brand is saved and the board is open at ${origin}/board. Next: get_business_data for real numbers, then write the first post.`,
+    );
+  },
+});
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const BUSINESS_TOOLS: Tool<any>[] = [
   readSkill,
+  setUpBrandTool,
   getBusinessData,
   addBusinessNote,
   deleteBusinessNote,

@@ -37,6 +37,7 @@ import { HistoryImport } from "@/components/settings/history-import";
 import { ProfilePicker, type SeatRow } from "@/components/settings/profile-picker";
 import { WebsiteRow } from "@/components/settings/website-row";
 import { ClaudeConnector } from "@/components/settings/claude-connector";
+import { withBase } from "@/lib/base-path";
 
 /**
  * What came back from LinkedIn after connecting a profile. One line each,
@@ -303,7 +304,7 @@ export async function SettingsBody({
             {/* A plain link, so it downloads with no JavaScript and works
                 with save link as. The route sets the file name. */}
             <a
-              href="/api/account/export"
+              href={withBase("/api/account/export")}
               download
               className="text-right text-[15px] text-ink underline"
             >

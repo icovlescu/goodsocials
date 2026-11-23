@@ -1,6 +1,7 @@
 import type { Block } from "./types";
 import { AGENCY_SEATS, IMAGE_CAP_PER_MONTH, SUPPORT } from "@/lib/legal";
 import { PLANS, TRIAL_DAYS } from "@/lib/plans";
+import { ORIGIN } from "@/lib/share";
 
 /**
  * The docs page, one section per thing a member asks about in the support
@@ -246,7 +247,7 @@ export const DOCS: DocSection[] = [
         type: "steps",
         items: [
           "In Claude, open Settings, then Connectors, and choose Add custom connector. In ChatGPT, turn on developer mode and add a connector the same way.",
-          "Name it GoodSocials and paste https://goodsocials.co/api/mcp as the URL. Settings in GoodSocials shows the same address under Write in your AI chat.",
+          `Name it GoodSocials and paste ${ORIGIN}/api/mcp as the URL. Settings in GoodSocials shows the same address under Write in your AI chat.`,
           "Press Connect. GoodSocials opens, you sign in with LinkedIn, and you press Allow.",
           "In a new chat, ask for a LinkedIn post. The chat reads the GoodSocials playbook, your principles, themes and business data first, then saves the post to Draft on your board.",
           "Ask for changes in the chat. When you say to schedule it, the post takes the next free 09:00 slot, or the day you name.",

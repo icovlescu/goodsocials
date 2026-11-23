@@ -26,8 +26,17 @@ import { TrackLanding } from "@/components/marketing/track-landing";
 import { shareMetadata } from "@/lib/share";
 import { JsonLd } from "@/components/marketing/json-ld";
 import { jsonLd, organization, software } from "@/lib/structured-data";
+import { isPivot } from "@/lib/base-path";
+import { PivotLanding } from "@/components/marketing/pivot-landing";
 
-export const metadata = shareMetadata({
+export const metadata = isPivot()
+  ? shareMetadata({
+      path: "/",
+      title: "GoodSocials: your AI chat writes, GoodSocials publishes",
+      description:
+        "Write LinkedIn posts in Claude, ChatGPT or any MCP chat from your own business data. Approve them on a board, publish close to daily. Free for 5 posts a month.",
+    })
+  : shareMetadata({
   path: "/",
   title: "GoodSocials: AI social media manager for LinkedIn",
   description:
@@ -259,6 +268,8 @@ function Month({
  */
 export default async function Home() {
   const signedIn = await isSignedIn();
+  // The pivot product at /v2 has its own page. lib/base-path.ts.
+  if (isPivot()) return <PivotLanding signedIn={signedIn} />;
   const account = signedIn ? await loadViewerAccount() : null;
   const start = planHref(DEFAULT_PLAN.slug, signedIn);
   const startLabel = signedIn ? SIGNED_IN_CTA : HERO_CTA;

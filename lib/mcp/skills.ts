@@ -20,6 +20,7 @@ const PLAYBOOK = `# GoodSocials playbook
 GoodSocials keeps the member's social media board: brand principles, themes, business data, a queue and a publisher. You write the posts, in this chat. The member approves every one by hand.
 
 ## The loop
+0. **New board?** If get_brand_context says the board has no brand yet, set it up first: read the member's website (or ask about their work), draft the voice, format and visual principles and four themes, show them, and save with set_up_brand.
 1. **Read.** Call get_brand_context (voice, themes, rules, recent posts, plan limits) and get_business_data (real numbers from Stripe, PostHog and the rest, plus notes the member saved).
 2. **Find the post.** The best posts come from the business data: a number that moved, a milestone, a pattern customers show. One finding per post. If the post needs a number that is not in the data, ask the member for it. Never invent one.
 3. **Write** for LinkedIn first, in the voice principle, within the writing rules. Call check_post before showing it.

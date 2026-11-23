@@ -26,6 +26,7 @@ import { readFacts, type FactRow } from "@/lib/integrations/facts";
 import { runPublishQueue, type PublishOutcome } from "@/lib/publish";
 import { FREE_LIMITS, UPGRADE_LINE, usageFor } from "@/lib/tiers";
 import { canPublishCard } from "@/lib/billing";
+import { CHAT_WRITES, serverImages, serverWriting } from "@/lib/flags";
 
 /**
  * Three actions, no fourth. Approve advances the card one column, Revise
@@ -129,6 +130,7 @@ export async function approveCard(
   const db = getDb();
 
   if (card.state === "idea") {
+    if (!serverWriting()) return { ok: false, error: CHAT_WRITES };
     let text: string;
     try {
       text = await generateDraft({
@@ -174,6 +176,19 @@ export async function approveCard(
         .where(eq(cardTable.id, card.id));
       await log(card.id, "approve", actor.memberId);
       return { ok: true };
+    }
+
+    // No image provider on this deployment: the post goes on without one,
+    // the same way it does at the cap, and says so.
+    if (!serverImages()) {
+      const slot = await schedule(
+        card.id,
+        profile.id,
+        board.targetCadence,
+        boardZone(board.timezone),
+      );
+      await log(card.id, "approve", actor.memberId);
+      return { ok: true, message: `Images are off on this plan. Scheduled for ${slot} without one.` };
     }
 
     const result = await generateImage({
@@ -256,7 +271,9 @@ async function qualityGate(
   const { card, profile, principles, facts } = loaded;
   const text = card.draftText;
   if (!text) return { ok: false, error: "That card has no text to publish." };
-  const editor = opts.editor ?? true;
+  // Without our key the editor cannot run, and the rules alone decide rather
+  // than every Schedule failing. lib/flags.ts.
+  const editor = (opts.editor ?? true) && serverWriting();
 
   const hash = textHash(text);
   if (isVerdict(card.quality) && card.quality.textHash === hash) {
@@ -471,6 +488,13 @@ export async function reviseCard(
     return { ok: false, error: "Keep a comment under 2000 characters." };
   }
 
+  if (!serverWriting()) {
+    return {
+      ok: false,
+      error: "Revising here needs a paid plan. Ask your AI chat to change the post with the GoodSocials connector, and it updates this card.",
+    };
+  }
+
   const loaded = await load(actor, cardId);
   if (!loaded) return { ok: false, error: "That card is not on your board." };
 
@@ -668,6 +692,7 @@ export async function rejectCard(
 const AUTO_DRAFT_LIMIT = 2;
 
 export async function topUpDrafts(profileId: string): Promise<number> {
+  if (!serverWriting()) return 0;
   const db = getDb();
 
   const [row] = await db
@@ -749,6 +774,7 @@ export const OPEN_IDEA_LIMIT = 21;
 const AVOID_LIMIT = 40;
 
 export async function planMoreIdeas(actor: Actor): Promise<CardResult> {
+  if (!serverWriting()) return { ok: false, error: CHAT_WRITES };
   const db = getDb();
 
   const [row] = await db
@@ -1127,7 +1153,7 @@ export async function scheduleWritten(
   // Paid plans get the editor pass on top of the rules; it is the review the
   // plan pays for. Free gets the rules, which cost nothing to run.
   if (card.state !== "scheduled") {
-    const stopped = await qualityGate(loaded, { editor: allowed.paid });
+    const stopped = await qualityGate(loaded, { editor: allowed.paid && serverWriting() });
     if (stopped && !stopped.ok) return stopped;
   }
 
@@ -1168,7 +1194,7 @@ export async function publishWrittenNow(
   if (!allowed.ok) return allowed;
 
   if (card.state !== "scheduled") {
-    const stopped = await qualityGate(loaded, { editor: allowed.paid });
+    const stopped = await qualityGate(loaded, { editor: allowed.paid && serverWriting() });
     if (stopped && !stopped.ok) return stopped;
   }
 

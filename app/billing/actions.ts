@@ -8,6 +8,7 @@ import { funnelActor } from "@/lib/funnel-context";
 import { loadAccess } from "@/lib/profiles";
 import { PLAN_COOKIE, planFromSlug, type PlanSlug } from "@/lib/plans";
 import { track } from "@/lib/track";
+import { siteUrl } from "@/lib/base-path";
 
 /**
  * The buttons that move money: start a plan, open the portal where changing
@@ -138,9 +139,9 @@ async function origin(): Promise<string> {
   const head = await headers();
   const host = head.get("x-forwarded-host") ?? head.get("host");
   if (host) {
-    return `${head.get("x-forwarded-proto") ?? "https"}://${host}`;
+    return siteUrl(`${head.get("x-forwarded-proto") ?? "https"}://${host}`);
   }
-  return process.env.AUTH_URL ?? "https://goodsocials.co";
+  return siteUrl("https://goodsocials.co");
 }
 
 /** The sentence travels back on the URL, because it is one of ours. */

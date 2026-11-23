@@ -3,6 +3,7 @@ import { disconnectClaude } from "@/app/settings/actions";
 import { MCP_PATH } from "@/lib/oauth/metadata";
 import { connectedApps } from "@/lib/oauth/server";
 import { FREE_LIMITS } from "@/lib/tiers";
+import { siteUrl } from "@/lib/base-path";
 
 /**
  * The connector, in settings: the URL to paste into Claude and the apps
@@ -13,7 +14,7 @@ export async function ClaudeConnector({ memberId }: { memberId: string }) {
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "goodsocials.co";
   const proto = h.get("x-forwarded-proto") ?? "https";
-  const url = `${proto}://${host}${MCP_PATH}`;
+  const url = `${siteUrl(`${proto}://${host}`)}${MCP_PATH}`;
   const apps = await connectedApps(memberId);
 
   return (

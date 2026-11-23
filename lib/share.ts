@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { BASE_PATH, withBase } from "@/lib/base-path";
 
 /**
  * What a public page says about itself when its link is pasted somewhere:
@@ -16,7 +17,10 @@ import type { Metadata } from "next";
  */
 
 /** The canonical host. The only one that appears anywhere a stranger reads. */
-export const ORIGIN = "https://goodsocials.co";
+export const HOST = "https://goodsocials.co";
+
+/** The canonical site: the host, plus /v2 on the pivot product. */
+export const ORIGIN = `${HOST}${BASE_PATH}`;
 
 export const SITE_NAME = "GoodSocials";
 
@@ -44,22 +48,22 @@ export function shareMetadata({
   return {
     title,
     description,
-    alternates: { canonical: path },
+    alternates: { canonical: withBase(path) },
     openGraph: {
       type: "website",
       siteName: SITE_NAME,
       locale: "en_US",
-      url: path,
+      url: withBase(path),
       title: cardTitle,
       description,
-      images: [{ url: "/opengraph-image.png", ...IMAGE }],
+      images: [{ url: withBase("/opengraph-image.png"), ...IMAGE }],
       ...openGraph,
     },
     twitter: {
       card: "summary_large_image",
       title: cardTitle,
       description,
-      images: [{ url: "/twitter-image.png", ...IMAGE }],
+      images: [{ url: withBase("/twitter-image.png"), ...IMAGE }],
     },
   };
 }
