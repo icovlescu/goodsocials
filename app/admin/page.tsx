@@ -1,17 +1,23 @@
 import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
-import { isAdmin, loadPipeline, type MemberRow } from "@/lib/admin";
+import { canClaimAdmin, isAdmin, loadPipeline, type MemberRow } from "@/lib/admin";
+import { claimAdminAction } from "./actions";
 
 export const metadata = { title: "Admin", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
 
 /**
  * The pipeline from first visit to paying, for the founder and nobody else.
- * Anyone who is not on ADMIN_EMAILS gets a 404, so the page does not say it
- * exists. Rows in settings style: label left, value right, hairline between.
+ * Anyone who is not an admin gets a 404, so the page does not say it exists.
+ * The one exception is a deployment with no admin yet: a signed in member
+ * sees a Claim button, which is how a new deployment gets its first admin
+ * without a key or an email in the code. Rows in settings style: label left, value right, hairline between.
  */
 export default async function AdminPage() {
-  if (!(await isAdmin())) notFound();
+  if (!(await isAdmin())) {
+    if (await canClaimAdmin()) return <Claim />;
+    notFound();
+  }
   const pipeline = await loadPipeline();
 
   return (
@@ -180,4 +186,28 @@ function time(d: Date): string {
     minute: "2-digit",
     timeZone: "UTC",
   });
+}
+
+function Claim() {
+  return (
+    <>
+      <AppHeader />
+      <main className="mx-auto w-full max-w-[560px] px-4 py-16 sm:px-6">
+        <h1 className="text-[28px] font-semibold tracking-[-0.03em]">Claim the admin pages</h1>
+        <p className="mt-3 text-[15px] text-ink-2">
+          This deployment has no admin yet. The account you are signed in with becomes the admin
+          for the pipeline, the health page and the migrations. Only a one way hash of your
+          account id is stored. After this, everyone else gets a page not found here.
+        </p>
+        <form action={claimAdminAction} className="mt-8">
+          <button
+            type="submit"
+            className="rounded-[var(--r-md)] bg-ink px-5 py-3 text-[15px] font-semibold text-paper"
+          >
+            Make this account the admin
+          </button>
+        </form>
+      </main>
+    </>
+  );
 }

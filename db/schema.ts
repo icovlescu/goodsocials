@@ -720,3 +720,16 @@ export const businessNote = pgTable(
   },
   (t) => [index("business_note_profile_idx").on(t.profileId)],
 );
+
+/**
+ * Who may open the admin pages. A row is a SHA-256 of the member id, never the
+ * id or the email, so the table names nobody. The first signed in member to
+ * press Claim on /admin while it is empty writes the first row; lib/admin.ts
+ * holds the hash and the claim. ADMIN_EMAILS still works beside it.
+ */
+export const adminMember = pgTable("admin_member", {
+  memberHash: text("member_hash").primaryKey(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});

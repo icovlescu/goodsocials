@@ -1,7 +1,10 @@
+import { createHash } from "node:crypto";
 import { desc, eq, sql } from "drizzle-orm";
+import { auth } from "@/auth";
 import { getDb } from "@/db";
 import {
   account as accountTable,
+  adminMember,
   board as boardTable,
   funnelEvent,
   profile as profileTable,
@@ -23,16 +26,77 @@ import { loadViewer } from "@/lib/viewer";
  * The admin pipeline: every visitor, who registered, what they answered, and
  * how far they got towards paying. Read only. The page is app/admin.
  *
- * Gated on the signed in member's LinkedIn email, which LinkedIn verifies. The
- * list is a constant rather than an environment variable because it is one
- * person and changing it should be a reviewed commit.
+ * Gated two ways. ADMIN_EMAILS is the signed in member's LinkedIn email,
+ * which LinkedIn verifies, kept as a constant because changing it should be a
+ * reviewed commit. admin_member holds a SHA-256 of a member id, written by the
+ * first member to claim the page on a deployment with no admin yet, so a fork
+ * gets an admin by signing in and nobody's id or email is stored or committed.
  */
 export const ADMIN_EMAILS = ["pavel.kucherbaev@gmail.com"];
 
+/** One way, salted with the product name so the hash matches nothing else. */
+export function adminHash(memberId: string): string {
+  return createHash("sha256").update(`goodsocials-admin:${memberId}`).digest("hex");
+}
+
+async function hashIsAdmin(memberId: string): Promise<boolean> {
+  const [row] = await getDb()
+    .select({ h: adminMember.memberHash })
+    .from(adminMember)
+    .where(eq(adminMember.memberHash, adminHash(memberId)))
+    .limit(1);
+  return Boolean(row);
+}
+
 export async function isAdmin(): Promise<boolean> {
+  const session = await auth();
+  if (!session?.memberId) return false;
+  if (await hashIsAdmin(session.memberId)) return true;
   const viewer = await loadViewer();
   const email = viewer?.email?.trim().toLowerCase();
   return Boolean(email && ADMIN_EMAILS.includes(email));
+}
+
+/**
+ * Whether the signed in member may claim the admin pages: signed in, and no
+ * admin_member row exists yet. Null when nobody is signed in.
+ */
+export async function canClaimAdmin(): Promise<boolean> {
+  const session = await auth();
+  if (!session?.memberId) return false;
+  const [row] = await getDb().select({ h: adminMember.memberHash }).from(adminMember).limit(1);
+  return !row;
+}
+
+/**
+ * Makes the signed in member the admin, only while there is none. One
+ * statement, so two members pressing Claim at once cannot both win on a
+ * table that was empty when each looked.
+ */
+export async function claimAdmin(): Promise<boolean> {
+  const session = await auth();
+  if (!session?.memberId) return false;
+  const rows = await getDb().execute(sql`
+    insert into admin_member (member_hash)
+    select ${adminHash(session.memberId)}
+    where not exists (select 1 from admin_member)
+    returning member_hash`);
+  return rows.rows.length > 0;
+}
+
+/**
+ * The door every /api/admin route uses: an admin session, or the old ?k= key
+ * for a script or a database with no admin yet. Null means allowed.
+ */
+export async function adminDenied(url: URL): Promise<string | null> {
+  const expected = process.env.LINKEDIN_DEBUG_SECRET;
+  if (expected && url.searchParams.get("k") === expected) return null;
+  try {
+    if (await isAdmin()) return null;
+  } catch {
+    // No database yet. The key is the only door until there is one.
+  }
+  return "Sign in with an admin account, then open this page again. On a new deployment, open /admin signed in and press Claim.";
 }
 
 /** One browser, by its gs_aid cookie, folded to what the pipeline needs. */

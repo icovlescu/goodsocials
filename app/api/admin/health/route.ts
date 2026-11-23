@@ -1,5 +1,6 @@
 import { neon } from "@neondatabase/serverless";
-import { assertDebugSecret, htmlPage } from "@/lib/linkedin/debug-auth";
+import { adminDenied } from "@/lib/admin";
+import { htmlPage } from "@/lib/linkedin/debug-auth";
 import { paymentsHidden } from "@/lib/flags";
 import { testLoginEnabled } from "@/lib/test-login";
 
@@ -58,7 +59,7 @@ function row(label: string, value: string) {
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const denied = assertDebugSecret(url);
+  const denied = await adminDenied(url);
   if (denied) return htmlPage("Blocked", `<h1>Blocked</h1><p>${denied}</p>`);
 
   const env = REQUIRED.map((name) =>
@@ -121,7 +122,7 @@ export async function GET(request: Request) {
               "tables missing",
               `<span style="color:#c94b4b">${missing.join(", ")}</span>`,
             ) +
-            `<p style="margin-top:24px;color:#6E6E73">Run /api/admin/migrate with the same key. Sign in fails with AccessDenied until the tables exist, because the insert throws inside the Auth.js callback.</p>`;
+            `<p style="margin-top:24px;color:#6E6E73">Redeploy, which runs the migrations, or open /api/admin/migrate. Sign in fails with AccessDenied until the tables exist, because the insert throws inside the Auth.js callback.</p>`;
     } catch (cause) {
       tableRows = row(
         "database",

@@ -4,13 +4,14 @@ import { board as boardTable, card as cardTable } from "@/db/schema";
 import { canPublish } from "@/lib/billing";
 import { emptyFunnel } from "@/lib/funnel";
 import { funnelActor } from "@/lib/funnel-context";
-import { assertDebugSecret, htmlPage } from "@/lib/linkedin/debug-auth";
+import { adminDenied } from "@/lib/admin";
+import { htmlPage } from "@/lib/linkedin/debug-auth";
 
 /**
  * Sends the signed in member's active profile back to the first onboarding
  * question, so a founder who is already registered can walk the funnel the
- * way a stranger does. Gated on LINKEDIN_DEBUG_SECRET like the other admin
- * routes, and on a session, so it only ever restarts the caller's own board.
+ * way a stranger does. Gated on an admin session or LINKEDIN_DEBUG_SECRET like the
+ * other admin routes, and on a session, so it only ever restarts the caller's own board.
  *
  * Nothing is deleted. The ideas waiting in the Idea column are marked
  * rejected, because the funnel writes a fresh seven and skips that step on a
@@ -24,7 +25,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const denied = assertDebugSecret(url);
+  const denied = await adminDenied(url);
   if (denied) return htmlPage("Blocked", `<h1>Blocked</h1><p>${denied}</p>`);
 
   const actor = await funnelActor();
