@@ -31,7 +31,10 @@ const nextConfig: NextConfig = {
     if (v2Origin && !basePath) {
       rules.push(
         { source: "/v2", destination: `${v2Origin}/v2` },
-        { source: "/v2/:path*", destination: `${v2Origin}/v2/:path*` },
+        // Not the cron routes. vercel.json is shared, so both projects carry
+        // a /v2/api/cron entry; on this one it must 404 rather than reach v2
+        // and run v2's queue a second time beside v2's own cron.
+        { source: "/v2/:path((?!api/cron/).*)", destination: `${v2Origin}/v2/:path` },
         {
           source: "/.well-known/oauth-authorization-server/v2",
           destination: `${v2Origin}/v2/.well-known/oauth-authorization-server`,
